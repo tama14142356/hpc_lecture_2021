@@ -1,2 +1,5 @@
 *.o
+*.out
 *.python-version
+.ipynb_checkpoints/
+compile_commands.json
