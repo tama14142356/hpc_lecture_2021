@@ -12,6 +12,7 @@ void matmult(vector<float> &subA, vector<float> &subB, vector<float> &subC, int 
     for (int irank = 0; irank < size; irank++) {
         auto tic = chrono::steady_clock::now();
         int offset = N / size * ((rank + irank) % size);
+#pragma omp parallel for collapse(2)
         for (int i = 0; i < N / size; i++)
             for (int j = 0; j < N / size; j++)
                 for (int k = 0; k < N; k++)
@@ -54,8 +55,8 @@ int main(int argc, char **argv) {
             subB[N / size * i + j] = B[N * i + j + offset];
     double comp_time = 0, comm_time = 0;
     matmult(subA, subB, subC, N, comp_time, comm_time, rank, size);
-    MPI_Allgather(&subC[0], N * N / size, MPI_FLOAT, &C[0], N * N / size,
-            MPI_FLOAT, MPI_COMM_WORLD);
+    MPI_Allgather(&subC[0], N * N / size, MPI_FLOAT, &C[0], N * N / size,MPI_FLOAT, MPI_COMM_WORLD);
+#pragma omp parallel for
     for (int i = 0; i < N; i++)
         for (int j = 0; j < N; j++)
             for (int k = 0; k < N; k++)
