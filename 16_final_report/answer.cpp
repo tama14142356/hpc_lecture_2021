@@ -1,11 +1,63 @@
 #include <mpi.h>
+
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <vector>
 using namespace std;
 
-void matmult(vector<float> &subA, vector<float> &subB, vector<float> &subC, int N, double &comp_time, double &comm_time, int rank, int size) {
+//void matmult(vector<float> &A, vector<float> &B, vector<float> &C, int N) {
+//    const int m = N, n = N, k = N;
+//    const int kc = 512;
+//    const int nc = 64;
+//    const int mc = 256;
+//    const int nr = 64;
+//    const int mr = 32;
+//#pragma omp parallel for collapse(2)
+//    for (int jc = 0; jc < n; jc += nc) {
+//        for (int pc = 0; pc < k; pc += kc) {
+//            float Bc[kc * nc];
+//            for (int p = 0; p < kc; p++) {
+//                for (int j = 0; j < nc; j++) {
+//                    Bc[p * nc + j] = B[N * (p + pc) + (j + jc)];
+//                }
+//            }
+//            for (int ic = 0; ic < m; ic += mc) {
+//                float Ac[mc * kc], Cc[mc * nc];
+//                for (int i = 0; i < mc; i++) {
+//                    for (int p = 0; p < kc; p++) {
+//                        Ac[i * kc + p] = A[N * (i + ic) + (p + pc)];
+//                    }
+//                    for (int j = 0; j < nc; j++) {
+//                        Cc[i * nc + j] = 0;
+//                    }
+//                }
+//                for (int jr = 0; jr < nc; jr += nr) {
+//                    for (int ir = 0; ir < mc; ir += mr) {
+//                        for (int kr = 0; kr < kc; kr++) {
+//                            for (int i = ir; i < ir + mr; i++) {
+//                                __m256 Avec = _mm256_broadcast_ss(Ac + i * kc + kr);
+//                                for (int j = jr; j < jr + nr; j += 8) {
+//                                    __m256 Bvec = _mm256_load_ps(Bc + kr * nc + j);
+//                                    __m256 Cvec = _mm256_load_ps(Cc + i * nc + j);
+//                                    Cvec = _mm256_fmadd_ps(Avec, Bvec, Cvec);
+//                                    _mm256_store_ps(Cc + i * nc + j, Cvec);
+//                                }
+//                            }
+//                        }
+//                    }
+//                }
+//                for (int i = 0; i < mc; i++) {
+//                    for (int j = 0; j < nc; j++) {
+//                        C[N * (i + ic) + (j + jc)] += Cc[i * nc + j];
+//                    }
+//                }
+//            }
+//        }
+//    }
+//}
+
+void matmult(vector<float> &A, vector<float> &B, vector<float> &C, int N, double &comp_time, double &comm_time, int rank, int size) {
     int recv_from = (rank + 1) % size;
     int send_to = (rank - 1 + size) % size;
 
@@ -16,12 +68,12 @@ void matmult(vector<float> &subA, vector<float> &subB, vector<float> &subC, int 
         for (int i = 0; i < N / size; i++)
             for (int j = 0; j < N / size; j++)
                 for (int k = 0; k < N; k++)
-                    subC[N * i + j + offset] += subA[N * i + k] * subB[N / size * k + j];
+                    C[N * i + j + offset] += A[N * i + k] * B[N / size * k + j];
         auto toc = chrono::steady_clock::now();
         comp_time += chrono::duration<double>(toc - tic).count();
         MPI_Request request[2];
-        MPI_Isend(&subB[0], N * N / size, MPI_FLOAT, send_to, 0, MPI_COMM_WORLD,&request[0]);
-        MPI_Irecv(&subB[0], N * N / size, MPI_FLOAT, recv_from, 0,MPI_COMM_WORLD, &request[1]);
+        MPI_Isend(&B[0], N * N / size, MPI_FLOAT, send_to, 0, MPI_COMM_WORLD, &request[0]);
+        MPI_Irecv(&B[0], N * N / size, MPI_FLOAT, recv_from, 0,MPI_COMM_WORLD, &request[1]);
         MPI_Waitall(2, request, MPI_STATUS_IGNORE);
         tic = chrono::steady_clock::now();
         comm_time += chrono::duration<double>(tic - toc).count();
@@ -55,7 +107,7 @@ int main(int argc, char **argv) {
             subB[N / size * i + j] = B[N * i + j + offset];
     double comp_time = 0, comm_time = 0;
     matmult(subA, subB, subC, N, comp_time, comm_time, rank, size);
-    MPI_Allgather(&subC[0], N * N / size, MPI_FLOAT, &C[0], N * N / size,MPI_FLOAT, MPI_COMM_WORLD);
+    MPI_Allgather(&subC[0], N * N / size, MPI_FLOAT, &C[0], N * N / size, MPI_FLOAT, MPI_COMM_WORLD);
 #pragma omp parallel for
     for (int i = 0; i < N; i++)
         for (int j = 0; j < N; j++)
@@ -69,8 +121,7 @@ int main(int argc, char **argv) {
         printf("N    : %d\n", N);
         printf("comp : %lf s\n", comp_time);
         printf("comm : %lf s\n", comm_time);
-        printf("total: %lf s (%lf GFlops)\n", time,
-                2. * N * N * N / time / 1e9);
+        printf("total: %lf s (%lf GFlops)\n", time, 2. * N * N * N / time / 1e9);
         printf("error: %lf\n", err / N / N);
     }
     MPI_Finalize();
