@@ -44,8 +44,10 @@ int main(int argc, char** argv) {
           subC[N*i+j+offset] += subA[N*i+k] * subB[N/size*k+j];
     auto toc = chrono::steady_clock::now();
     comp_time += chrono::duration<double>(toc - tic).count();
-    MPI_Send(&subB[0], N*N/size, MPI_FLOAT, send_to, 0, MPI_COMM_WORLD);
-    MPI_Recv(&subB[0], N*N/size, MPI_FLOAT, recv_from, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Request request[2];
+    MPI_Isend(&subB[0], N*N/size, MPI_FLOAT, send_to, 0, MPI_COMM_WORLD, &request[0]);
+    MPI_Irecv(&subB[0], N*N/size, MPI_FLOAT, recv_from, 0, MPI_COMM_WORLD, &request[1]);
+    MPI_Waitall(2, request, MPI_STATUS_IGNORE);
     tic = chrono::steady_clock::now();
     comm_time += chrono::duration<double>(tic - toc).count();
   }
