@@ -7,13 +7,63 @@
 #include <vector>
 using namespace std;
 
+//void matmult(vector<float> &A, vector<float> &B, vector<float> &C, int N) {
+//    const int m = N, n = N, k = N;
+//    const int kc = 512;
+//    const int nc = 64;
+//    const int mc = 256;
+//    const int nr = 64;
+//    const int mr = 32;
+//#pragma omp parallel for collapse(2)
+//    for (int jc = 0; jc < n; jc += nc) {
+//        for (int pc = 0; pc < k; pc += kc) {
+//            float Bc[kc * nc];
+//            for (int p = 0; p < kc; p++) {
+//                for (int j = 0; j < nc; j++) {
+//                    Bc[p * nc + j] = B[N * (p + pc) + (j + jc)];
+//                }
+//            }
+//            for (int ic = 0; ic < m; ic += mc) {
+//                float Ac[mc * kc], Cc[mc * nc];
+//                for (int i = 0; i < mc; i++) {
+//                    for (int p = 0; p < kc; p++) {
+//                        Ac[i * kc + p] = A[N * (i + ic) + (p + pc)];
+//                    }
+//                    for (int j = 0; j < nc; j++) {
+//                        Cc[i * nc + j] = 0;
+//                    }
+//                }
+//                for (int jr = 0; jr < nc; jr += nr) {
+//                    for (int ir = 0; ir < mc; ir += mr) {
+//                        for (int kr = 0; kr < kc; kr++) {
+//                            for (int i = ir; i < ir + mr; i++) {
+//                                // simd
+//                                __m256 Avec = _mm256_broadcast_ss(Ac + i * kc + kr);
+//                                for (int j = jr; j < jr + nr; j += 8) {
+//                                    __m256 Bvec = _mm256_load_ps(Bc + kr * nc + j);
+//                                    __m256 Cvec = _mm256_load_ps(Cc + i * nc + j);
+//                                    Cvec = _mm256_fmadd_ps(Avec, Bvec, Cvec);
+//                                    _mm256_store_ps(Cc + i * nc + j, Cvec);
+//                                }
+//                                // not simd
+//                                for (int j = jr; j < jr + nr; j++) {
+//                                    Cc[i * nc + j] += Ac[i * kc + kr] * Bc[kr * nc + j];
+//                                }
+//                            }
+//                        }
+//                    }
+//                }
+//                for (int i = 0; i < mc; i++) {
+//                    for (int j = 0; j < nc; j++) {
+//                        C[N * (i + ic) + (j + jc)] += Cc[i * nc + j];
+//                    }
+//                }
+//            }
+//        }
+//    }
+//}
+
 void matmult(vector<float> &A, vector<float> &B, vector<float> &C, int N, double &comp_time, double &comm_time, int rank, int size) {
-    const int m = N / size, n = N / size, k = N;
-    const int kc = (k >= 512) ? 512 : k;
-    const int nc = (n >= 64) ? 64 : n;
-    const int mc = (m >= 256) ? 256 : m;
-    const int nr = (nc >= 64) ? 64 : nc;
-    const int mr = (mc >= 32) ? 32 : mc;
     // copy to sub
     vector<float> subA(N * N / size);
     vector<float> subB(N * N / size);
@@ -35,48 +85,10 @@ void matmult(vector<float> &A, vector<float> &B, vector<float> &C, int N, double
         auto tic = chrono::steady_clock::now();
         offset = N / size * ((rank + irank) % size);
 #pragma omp parallel for collapse(2)
-        for (int jc = 0; jc < n; jc += nc) {
-            for (int pc = 0; pc < k; pc += kc) {
-                float Bc[kc * nc];
-                for (int p = 0; p < kc; p++) {
-                    for (int j = 0; j < nc; j++) {
-                        Bc[p * nc + j] = subB[N * (p + pc) + (j + jc)];
-                    }
-                }
-                for (int ic = 0; ic < m; ic += mc) {
-                    float Ac[mc * kc], Cc[mc * nc];
-                    for (int i = 0; i < mc; i++) {
-                        for (int p = 0; p < kc; p++) {
-                            Ac[i * kc + p] = subA[N * (i + ic) + (p + pc)];
-                        }
-                        for (int j = 0; j < nc; j++) {
-                            Cc[i * nc + j] = 0;
-                        }
-                    }
-                    for (int jr = 0; jr < nc; jr += nr) {
-                        for (int ir = 0; ir < mc; ir += mr) {
-                            for (int kr = 0; kr < kc; kr++) {
-                                for (int i = ir; i < ir + mr; i++) {
-                                    // simd
-                                    __m256 Avec = _mm256_broadcast_ss(Ac + i * kc + kr);
-                                    for (int j = jr; j < jr + nr; j += 8) {
-                                        __m256 Bvec = _mm256_load_ps(Bc + kr * nc + j);
-                                        __m256 Cvec = _mm256_load_ps(Cc + i * nc + j);
-                                        Cvec = _mm256_fmadd_ps(Avec, Bvec, Cvec);
-                                        _mm256_store_ps(Cc + i * nc + j, Cvec);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    for (int i = 0; i < mc; i++) {
-                        for (int j = 0; j < nc; j++) {
-                            subC[N * (i + ic) + (j + jc) + offset] += Cc[i * nc + j];
-                        }
-                    }
-                }
-            }
-        }
+        for (int i = 0; i < N / size; i++)
+            for (int k = 0; k < N; k++)
+                for (int j = 0; j < N / size; j++)
+                    subC[N * i + j + offset] += subA[N * i + k] * subB[N / size * k + j];
         auto toc = chrono::steady_clock::now();
         comp_time += chrono::duration<double>(toc - tic).count();
         MPI_Request request[2];
