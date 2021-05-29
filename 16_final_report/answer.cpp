@@ -1,8 +1,9 @@
-#include <mpi.h>
-
-#include <chrono>
-#include <cmath>
+#include <cstdlib>
 #include <cstdio>
+#include <cmath>
+#include <chrono>
+#include <immintrin.h>
+#include <mpi.h>
 #include <vector>
 using namespace std;
 
@@ -60,6 +61,7 @@ using namespace std;
 void matmult(vector<float> &A, vector<float> &B, vector<float> &C, int N, double &comp_time, double &comm_time, int rank, int size) {
     int recv_from = (rank + 1) % size;
     int send_to = (rank - 1 + size) % size;
+    vector<float> recv(N * N / size);
 
     for (int irank = 0; irank < size; irank++) {
         auto tic = chrono::steady_clock::now();
@@ -73,8 +75,10 @@ void matmult(vector<float> &A, vector<float> &B, vector<float> &C, int N, double
         comp_time += chrono::duration<double>(toc - tic).count();
         MPI_Request request[2];
         MPI_Isend(&B[0], N * N / size, MPI_FLOAT, send_to, 0, MPI_COMM_WORLD, &request[0]);
-        MPI_Irecv(&B[0], N * N / size, MPI_FLOAT, recv_from, 0,MPI_COMM_WORLD, &request[1]);
+        MPI_Irecv(&recv[0], N * N / size, MPI_FLOAT, recv_from, 0,MPI_COMM_WORLD, &request[1]);
         MPI_Waitall(2, request, MPI_STATUS_IGNORE);
+        for (int i = 0; i < N * N / size; i++)
+            subB[i] = recv[i];
         tic = chrono::steady_clock::now();
         comm_time += chrono::duration<double>(tic - toc).count();
     }
@@ -85,6 +89,7 @@ int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    printf("rank: %d/%d\n",rank,size);
 
     const int N = 256;
     vector<float> A(N * N);
@@ -101,10 +106,12 @@ int main(int argc, char **argv) {
     }
     int offset = N / size * rank;
     for (int i = 0; i < N / size; i++)
-        for (int j = 0; j < N; j++) subA[N * i + j] = A[N * (i + offset) + j];
+        for (int j = 0; j < N; j++)
+            subA[N * i + j] = A[N * (i + offset) + j];
     for (int i = 0; i < N; i++)
         for (int j = 0; j < N / size; j++)
             subB[N / size * i + j] = B[N * i + j + offset];
+
     double comp_time = 0, comm_time = 0;
     matmult(subA, subB, subC, N, comp_time, comm_time, rank, size);
     MPI_Allgather(&subC[0], N * N / size, MPI_FLOAT, &C[0], N * N / size, MPI_FLOAT, MPI_COMM_WORLD);
