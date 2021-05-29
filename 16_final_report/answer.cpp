@@ -59,6 +59,19 @@ using namespace std;
 //}
 
 void matmult(vector<float> &A, vector<float> &B, vector<float> &C, int N, double &comp_time, double &comm_time, int rank, int size) {
+    // copy to sub
+    vector<float> subA(N * N / size);
+    vector<float> subB(N * N / size);
+    vector<float> subC(N * N / size, 0);
+    int offset = N / size * rank;
+    for (int i = 0; i < N / size; i++)
+        for (int j = 0; j < N; j++)
+            subA[N * i + j] = A[N * (i + offset) + j];
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < N / size; j++)
+            subB[N / size * i + j] = B[N * i + j + offset];
+
+    // body (measure time part)
     int recv_from = (rank + 1) % size;
     int send_to = (rank - 1 + size) % size;
     vector<float> recv(N * N / size);
@@ -70,11 +83,11 @@ void matmult(vector<float> &A, vector<float> &B, vector<float> &C, int N, double
         for (int i = 0; i < N / size; i++)
             for (int j = 0; j < N / size; j++)
                 for (int k = 0; k < N; k++)
-                    C[N * i + j + offset] += A[N * i + k] * B[N / size * k + j];
+                    subC[N * i + j + offset] += subA[N * i + k] * subB[N / size * k + j];
         auto toc = chrono::steady_clock::now();
         comp_time += chrono::duration<double>(toc - tic).count();
         MPI_Request request[2];
-        MPI_Isend(&B[0], N * N / size, MPI_FLOAT, send_to, 0, MPI_COMM_WORLD, &request[0]);
+        MPI_Isend(&subB[0], N * N / size, MPI_FLOAT, send_to, 0, MPI_COMM_WORLD, &request[0]);
         MPI_Irecv(&recv[0], N * N / size, MPI_FLOAT, recv_from, 0,MPI_COMM_WORLD, &request[1]);
         MPI_Waitall(2, request, MPI_STATUS_IGNORE);
         for (int i = 0; i < N * N / size; i++)
@@ -82,6 +95,8 @@ void matmult(vector<float> &A, vector<float> &B, vector<float> &C, int N, double
         tic = chrono::steady_clock::now();
         comm_time += chrono::duration<double>(tic - toc).count();
     }
+    // copy to C (answer)
+    MPI_Allgather(&subC[0], N * N / size, MPI_FLOAT, &C[0], N * N / size, MPI_FLOAT, MPI_COMM_WORLD);
 }
 
 int main(int argc, char **argv) {
@@ -89,32 +104,22 @@ int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    printf("rank: %d/%d\n",rank,size);
+    printf("rank: %d/%d\n", rank, size);
 
     const int N = 256;
     vector<float> A(N * N);
     vector<float> B(N * N);
     vector<float> C(N * N, 0);
-    vector<float> subA(N * N / size);
-    vector<float> subB(N * N / size);
-    vector<float> subC(N * N / size, 0);
     for (int i = 0; i < N; i++) {
         for (int j = 0; j < N; j++) {
             A[N * i + j] = drand48();
             B[N * i + j] = drand48();
         }
     }
-    int offset = N / size * rank;
-    for (int i = 0; i < N / size; i++)
-        for (int j = 0; j < N; j++)
-            subA[N * i + j] = A[N * (i + offset) + j];
-    for (int i = 0; i < N; i++)
-        for (int j = 0; j < N / size; j++)
-            subB[N / size * i + j] = B[N * i + j + offset];
 
     double comp_time = 0, comm_time = 0;
-    matmult(subA, subB, subC, N, comp_time, comm_time, rank, size);
-    MPI_Allgather(&subC[0], N * N / size, MPI_FLOAT, &C[0], N * N / size, MPI_FLOAT, MPI_COMM_WORLD);
+    matmult(A, B, C, N, comp_time, comm_time, rank, size);
+
 #pragma omp parallel for
     for (int i = 0; i < N; i++)
         for (int j = 0; j < N; j++)
