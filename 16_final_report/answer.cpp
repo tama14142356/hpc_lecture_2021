@@ -37,12 +37,17 @@ using namespace std;
 //                    for (int ir = 0; ir < mc; ir += mr) {
 //                        for (int kr = 0; kr < kc; kr++) {
 //                            for (int i = ir; i < ir + mr; i++) {
+//                                // simd
 //                                __m256 Avec = _mm256_broadcast_ss(Ac + i * kc + kr);
 //                                for (int j = jr; j < jr + nr; j += 8) {
 //                                    __m256 Bvec = _mm256_load_ps(Bc + kr * nc + j);
 //                                    __m256 Cvec = _mm256_load_ps(Cc + i * nc + j);
 //                                    Cvec = _mm256_fmadd_ps(Avec, Bvec, Cvec);
 //                                    _mm256_store_ps(Cc + i * nc + j, Cvec);
+//                                }
+//                                // not simd
+//                                for (int j = jr; j < jr + nr; j++) {
+//                                    Cc[i * nc + j] += Ac[i * kc + kr] * Bc[kr * nc + j];
 //                                }
 //                            }
 //                        }
@@ -78,11 +83,11 @@ void matmult(vector<float> &A, vector<float> &B, vector<float> &C, int N, double
 
     for (int irank = 0; irank < size; irank++) {
         auto tic = chrono::steady_clock::now();
-        int offset = N / size * ((rank + irank) % size);
+        offset = N / size * ((rank + irank) % size);
 #pragma omp parallel for collapse(2)
         for (int i = 0; i < N / size; i++)
-            for (int j = 0; j < N / size; j++)
-                for (int k = 0; k < N; k++)
+            for (int k = 0; k < N; k++)
+                for (int j = 0; j < N / size; j++)
                     subC[N * i + j + offset] += subA[N * i + k] * subB[N / size * k + j];
         auto toc = chrono::steady_clock::now();
         comp_time += chrono::duration<double>(toc - tic).count();
