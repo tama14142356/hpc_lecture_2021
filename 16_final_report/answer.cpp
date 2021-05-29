@@ -14,6 +14,8 @@ void matmult(vector<float> &A, vector<float> &B, vector<float> &C, int N, double
     const int mc = (m >= 256) ? 256 : m;
     const int nr = (nc >= 64) ? 64 : nc;
     const int mr = (mc >= 32) ? 32 : mc;
+    // debug
+    // printf("m: %d n %d k %d kc : %d nc : %d mc : %d nr : %d mr : %d\n", m, n, k, kc, nc, mc, nr, mr);
     // copy to sub
     vector<float> subA(N * N / size);
     vector<float> subB(N * N / size);
@@ -40,7 +42,7 @@ void matmult(vector<float> &A, vector<float> &B, vector<float> &C, int N, double
                 float Bc[kc * nc];
                 for (int p = 0; p < kc; p++) {
                     for (int j = 0; j < nc; j++) {
-                        Bc[p * nc + j] = subB[N * (p + pc) + (j + jc)];
+                        Bc[p * nc + j] = subB[N / size * (p + pc) + (j + jc)];
                     }
                 }
                 for (int ic = 0; ic < m; ic += mc) {
@@ -58,12 +60,16 @@ void matmult(vector<float> &A, vector<float> &B, vector<float> &C, int N, double
                             for (int kr = 0; kr < kc; kr++) {
                                 for (int i = ir; i < ir + mr; i++) {
                                     // simd
-                                    __m256 Avec = _mm256_broadcast_ss(Ac + i * kc + kr);
-                                    for (int j = jr; j < jr + nr; j += 8) {
-                                        __m256 Bvec = _mm256_load_ps(Bc + kr * nc + j);
-                                        __m256 Cvec = _mm256_load_ps(Cc + i * nc + j);
-                                        Cvec = _mm256_fmadd_ps(Avec, Bvec, Cvec);
-                                        _mm256_store_ps(Cc + i * nc + j, Cvec);
+                                    // __m256 Avec = _mm256_broadcast_ss(Ac + i * kc + kr);
+                                    // for (int j = jr; j < jr + nr; j += 8) {
+                                    //     __m256 Bvec = _mm256_load_ps(Bc + kr * nc + j);
+                                    //     __m256 Cvec = _mm256_load_ps(Cc + i * nc + j);
+                                    //     Cvec = _mm256_fmadd_ps(Avec, Bvec, Cvec);
+                                    //     _mm256_store_ps(Cc + i * nc + j, Cvec);
+                                    // }
+                                    // not simd
+                                    for (int j = jr; j < jr + nr; j++) {
+                                        Cc[i * nc + j] += Ac[i * kc + kr] * Bc[kr * nc + j];
                                     }
                                 }
                             }
@@ -97,7 +103,8 @@ int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    printf("rank: %d/%d\n", rank, size);
+    // debug
+    // printf("rank: %d/%d\n", rank, size);
 
     const int N = 256;
     vector<float> A(N * N);
