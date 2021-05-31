@@ -1,4 +1,9 @@
 # final report 
+## for cpu
+answer.cpp
+## for gpu
+my_cuda_mpi.cu
+
 ### TSUBAME setup
 #### Interactive node
 qrsh -g tga-hpc-lecture -l f_node=1 -l h_rt=0:50:00 -ar 予約番号  
