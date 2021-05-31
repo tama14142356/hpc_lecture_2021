@@ -14,6 +14,6 @@ qdel ジョブID
 echo '' >> ~/.bashrc  
 echo '# Modules' >> ~/.bashrc  
 echo 'source /etc/profile.d/modules.sh' >> ~/.bashrc  
-echo 'module load gcc intel-mpi' >> ~/.bashrc  
+echo 'module load vim cmake gcc cuda/11.2.146 openmpi nccl cudnn intel' >> ~/.bashrc  
 source ~/.bashrc
 
