@@ -41,13 +41,11 @@ struct block_task
             float>
         thread_accumulator_t;
 
-    typedef float dp_vector_t;
-
     /// Load-from-shared data movement type for A-tile, coarsened by ItemsPerVectorY
-    typedef io_vector<dp_vector_t, ItemsPerVectorY> lds_vector_a_t;
+    typedef io_vector<float, ItemsPerVectorY> lds_vector_a_t;
 
     /// Load-from-shared data movement type for B-tile, coarsened by ItemsPerVectorX
-    typedef io_vector<dp_vector_t, ItemsPerVectorX> lds_vector_b_t;
+    typedef io_vector<float, ItemsPerVectorX> lds_vector_b_t;
 
     /// Thread block rasterization helper type
     typedef grid_raster<
@@ -67,7 +65,7 @@ struct block_task
       float,                                            // value_t
       16,                                          // MatrixAlignBytes
       false,                                   // AllowRaggedTiles
-      dp_vector_t,                                        // dp_vector_t
+      float,                                        // float
       load_algorithm::CongruousCopy>
     block_loader_a_t;
 
@@ -80,26 +78,19 @@ struct block_task
       float,                                            // value_t
       16,                                          // MatrixAlignBytes
       false,                                   // AllowRaggedTiles
-      dp_vector_t,                                        // dp_vector_t
+      float,                                        // float
       load_algorithm::CrosswiseCopy>
     block_loader_b_t;
-
-
-    enum
-    {
-      PadItemsA = __NV_STD_MAX(ItemsPerVectorY, block_loader_a_t::AlignmentDpVectorsL),
-      PadItemsB = ItemsPerVectorX,
-    };
 
 
     /// Shared memory layout for a prefetch page
     struct page_storage_t
     {
         /// Tile of A
-        dp_vector_t __align__(16) block_a[ItemsPerBlockK][ItemsPerBlockY + PadItemsA];
+        float __align__(16) block_a[ItemsPerBlockK][ItemsPerBlockY];
 
         /// Tile of B
-        dp_vector_t __align__(16) block_b[ItemsPerBlockK][ItemsPerBlockX + PadItemsB];
+        float __align__(16) block_b[ItemsPerBlockK][ItemsPerBlockX];
     };
 
 
@@ -107,7 +98,7 @@ struct block_task
     struct scratch_storage_t
     {
         /// Prefetch pages
-        page_storage_t pages[1];
+        page_storage_t pages;
 
         /// Accumulator shared scratch
         typename thread_accumulator_t::scratch_storage_t accum_scratch;
@@ -129,9 +120,6 @@ struct block_task
 
     /// Scratch storage reference
     scratch_storage_t *scratch;
-
-    /// Which page of scratch tiles we're currently reading from
-    int page_idx;
 
     /// Pointer to matrix C
     float *d_c;
@@ -223,7 +211,6 @@ struct block_task
         int dim_k)
     :
         scratch(scratch),
-        page_idx(0),
         d_c(d_c),
         dim_m(dim_m),
         dim_n(dim_n),
@@ -274,14 +261,14 @@ struct block_task
         for (int i = 0; i < VectorsPerThreadX; ++i)
         {
             slice_b[i].load(
-                &scratch->pages[page_idx].block_b[tile_offset_k][thread_strip_offset_b + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
+                &scratch->pages.block_b[tile_offset_k][thread_strip_offset_b + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
         }
 
         // Load A strip
         for (int i = 0; i < VectorsPerThreadY; ++i)
         {
             slice_a[i].load(
-                &scratch->pages[page_idx].block_a[tile_offset_k][thread_strip_offset_a + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
+                &scratch->pages.block_a[tile_offset_k][thread_strip_offset_a + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
         }
     }
 
@@ -358,8 +345,8 @@ struct block_task
                 __syncthreads();
 
                 // Commit global prefetch data to scratch page
-                loader_a.commit(scratch->pages[page_idx].block_a);
-                loader_b.commit(scratch->pages[page_idx].block_b);
+                loader_a.commit(scratch->pages.block_a);
+                loader_b.commit(scratch->pages.block_b);
 
                 __syncthreads();
             }
@@ -379,9 +366,9 @@ struct block_task
               loader_a.next();
             }
 
-            // Cast strip-mined loads to contiguous array of dp_vector_t
-            typedef dp_vector_t thread_tile_a_t[VectorsPerThreadY * ItemsPerVectorY];
-            typedef dp_vector_t thread_tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
+            // Cast strip-mined loads to contiguous array of float
+            typedef float thread_tile_a_t[VectorsPerThreadY * ItemsPerVectorY];
+            typedef float thread_tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
             thread_tile_a_t &thread_tile_a = reinterpret_cast<thread_tile_a_t&>(local_slices_a[(tile_offset_k) % 2]);
             thread_tile_b_t &thread_tile_b = reinterpret_cast<thread_tile_b_t&>(local_slices_b[(tile_offset_k) % 2]);
 
@@ -414,8 +401,8 @@ struct block_task
         loader_b.next();
 
         // Commit global prefetch of first tile to shared memory
-        loader_a.commit(scratch->pages[page_idx].block_a);
-        loader_b.commit(scratch->pages[page_idx].block_b);
+        loader_a.commit(scratch->pages.block_a);
+        loader_b.commit(scratch->pages.block_b);
 
         // Advance to next A,B tiles in K-axis
         block_item_coords_k += ItemsPerBlockK;

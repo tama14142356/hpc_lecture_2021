@@ -345,21 +345,6 @@ namespace nv_std {
     /// The type used as a compile-time boolean with false value.
     typedef integral_constant<bool, false>  false_type;
 
-
-#if (!defined(_MSC_VER) && (__cplusplus < 201402L)) || (defined(_MSC_VER) && (_MSC_VER < 1900))
-
-    /// std::bool_constant
-    template <bool V>
-    struct bool_constant : nv_std::integral_constant<bool, V>
-    {};
-
-#else
-
-    using std::bool_constant;
-
-#endif
-
-
 #if (!defined(_MSC_VER) && (__cplusplus < 201103L)) || (defined(_MSC_VER) && (_MSC_VER < 1700))
 
     /// std::nullptr_t
