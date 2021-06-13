@@ -3,7 +3,6 @@
 #include "../util/util.h"
 #include "block_task.h"
 #include "grid_raster.h"
-#include "k_split_control.h"
 
 namespace cutlass {
 namespace gemm {
@@ -13,7 +12,6 @@ namespace gemm {
                        int m,                      ///< Height in rows of op(A) and C
                        int n,                      ///< Width in columns of op(B) and C
                        int k,                      ///< Width in columns of op(A) and height in rows of op(B)
-                       k_split_control k_split,    ///< Abstraction for controlling inter-block k-splitting
                        epilogue_op_t op,           ///< Epilogue operation to update matrix C
                        float *d_a,               ///< Pointer to matrix A array values
                        float *d_b,               ///< Pointer to matrix B array values
@@ -40,8 +38,7 @@ namespace gemm {
         op,
         m,
         n,
-        k,
-        k_split).run();
+        k).run();
 }
 
 
@@ -71,22 +68,11 @@ void dispatch(
     grid_raster_strategy::Default>
     grid_raster_t;
   int dynamic_smem_bytes = 0;
-  int max_sm_occupancy = 8;
   dim3 block = dim3(64);
   dim3 grid = grid_raster_t::grid_dims(m, n);
   int sm_count;
   get_sm_count(sm_count);
-  int *d_flags;
-  cudaGetSymbolAddress((void**) &d_flags, d_flags_split_k);
 
-  k_split_control k_split(
-                          d_flags,
-                          sm_count,
-                          max_sm_occupancy,
-                          k,
-                          8,
-                          block,
-                          grid);
   gemm::kernel<epilogue_op_t>
     <<< grid,
     block,
@@ -95,7 +81,6 @@ void dispatch(
                m,
                n,
                k,
-               k_split,
                epilogue,
                d_a,
                d_b,

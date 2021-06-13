@@ -38,7 +38,6 @@
 
 #include "grid_raster.h"
 #include "block_loader.h"
-#include "k_split_control.h"
 #include "thread_accumulator.h"
 
 namespace cutlass {
@@ -248,9 +247,6 @@ struct block_task
     /// Matrix width in columns of trans_op(B) and C
     int dim_n;
 
-    /// Control for inter-block k-splitting
-    k_split_control k_split;
-
     /// Thread block's base value_t coordinates (m, n) in matrix C
     grid_raster_t grid_raster;
 
@@ -330,8 +326,7 @@ struct block_task
         epilogue_op_t epilogue_op,
         int dim_m,
         int dim_n,
-        int dim_k,
-        k_split_control k_split)
+        int dim_k)
     :
         scratch(scratch),
         page_idx(0),
@@ -339,9 +334,8 @@ struct block_task
         epilogue_op(epilogue_op),
         dim_m(dim_m),
         dim_n(dim_n),
-        k_split(k_split),
-        block_item_coords_k(k_split.block_begin_item_k()),
-        block_end_item_k(k_split.block_end_item_k(dim_k)),
+        block_item_coords_k(0),
+        block_end_item_k(dim_k),
         block_warp_coords(warp_coords()),
         warp_thread_coords(thread_coords()),
         thread_strip_offset_a((warp_thread_coords.y * LdsVectorDpVectorsA) + (block_warp_coords.y * WarpItemsY)),
@@ -452,10 +446,6 @@ struct block_task
                 }
             }
         }
-
-        // Signal k-split successor thread_block that we have produced our block-wide
-        // tile of inclusive partial-sums
-        k_split.signal();
     }
 
 
