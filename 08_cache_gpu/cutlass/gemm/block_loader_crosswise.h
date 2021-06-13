@@ -34,18 +34,18 @@ struct block_loader<
     enum
     {
         /// Number of float per ldg_vector_t
-        LdgVectorDpVectors = 4,
+        ItemsPerVectorX = 4,
 
         /// Number of float per ldg_vector_t
-        LdgVectorItems = LdgVectorDpVectors,
+        LdgVectorItems = ItemsPerVectorX,
 
 
 
         /// Total number of ldg_vector_t within each block-wide tile
-        BlockLdgVectors = divide_assert<BlockDpVectors, LdgVectorDpVectors>::value,
+        BlockLdgVectors = divide_assert<BlockDpVectors, ItemsPerVectorX>::value,
 
         /// Extent of the block-wide tile in ldg_vector_t along K-axis
-        BlockLdgVectorsK = divide_assert<ItemsPerBlockK, LdgVectorDpVectors>::value,
+        BlockLdgVectorsK = divide_assert<ItemsPerBlockK, ItemsPerVectorX>::value,
 
         /// Extent of the block-wide tile in ldg_vector_t along L-axis
         BlockLdgVectorsL = ItemsPerBlockX,
@@ -235,9 +235,9 @@ struct block_loader<
 
                 // Write column of float
                 #pragma unroll
-                for (int dpvec = 0; dpvec < LdgVectorDpVectors; ++dpvec)
+                for (int dpvec = 0; dpvec < ItemsPerVectorX; ++dpvec)
                 {
-                    scratch_tile[(block_ldgvec_k * LdgVectorDpVectors) + dpvec][block_ldgvec_l] =
+                    scratch_tile[(block_ldgvec_k * ItemsPerVectorX) + dpvec][block_ldgvec_l] =
                         thread_tile[thread_ldgvec_k][thread_ldgvec_l].buff[dpvec];
                 }
             }

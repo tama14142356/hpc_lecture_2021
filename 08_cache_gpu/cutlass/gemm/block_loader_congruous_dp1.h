@@ -17,9 +17,6 @@ struct block_loader<
 {
     enum
     {
-        /// Number of float in a float
-        DpVectorItems = divide_assert<sizeof(float), sizeof(float)>::value,
-
         /// Number of float in a block-wide tile
         BlockDpVectors = ItemsPerBlockK * ItemsPerBlockX,
 
@@ -39,7 +36,7 @@ struct block_loader<
         LdgVectorDpVectors = ldg_vector_t::VectorItems,
 
         /// Number of float per ldg_vector_t
-        LdgVectorItems = LdgVectorDpVectors * DpVectorItems,
+        LdgVectorItems = LdgVectorDpVectors,
 
 
 
