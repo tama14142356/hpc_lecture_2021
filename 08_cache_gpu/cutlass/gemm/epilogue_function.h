@@ -62,27 +62,9 @@ namespace gemm {
         inline __device__ __host__
         output_t operator()(
             accum_t accumulator,
-            output_t c,
-            size_t idx) const
+            output_t c) const
         {
             return output_t(alpha * scalar_t(accumulator) + beta * scalar_t(c));
-        }
-
-
-        /// Epilogue operator
-        inline __device__ __host__
-        output_t operator()(
-            accum_t accumulator,
-            size_t idx) const
-        {
-            return output_t(alpha * scalar_t(accumulator));
-        }
-
-        /// Return whether the beta-scaled addend needs initialization
-        inline __device__
-        bool must_init_addend()
-        {
-            return (beta != scalar_t(0));
         }
     };
 

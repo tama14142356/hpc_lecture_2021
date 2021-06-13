@@ -198,27 +198,6 @@ cudaError_t get_sm_version(int &sm_version)
     return error;
 }
 
-
-/**
- * \brief Retrieves the count for the current device
- */
-cudaError_t get_sm_count(int &sm_count)
-{
-    cudaError_t error = cudaSuccess;
-
-    // Get device ordinal
-    int device_ordinal;
-    if (CUDA_PERROR_DEBUG(error = cudaGetDevice(&device_ordinal)))
-        return error;
-
-    // Get SM count
-    if (CUDA_PERROR_DEBUG(error = cudaDeviceGetAttribute (&sm_count, cudaDevAttrMultiProcessorCount, device_ordinal)))
-        return error;
-
-    return error;
-}
-
-
 } // namespace cutlass
 
 

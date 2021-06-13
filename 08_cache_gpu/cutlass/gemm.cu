@@ -23,7 +23,6 @@ int main(int argc, const char **argv) {
   typedef float value_t;
   typedef float accum_t;
   int g_timing_iterations = 10;
-  cudaStream_t stream = 0;
   matrix<value_t> A(m, k);
   matrix<value_t> B(k, n);
   matrix<accum_t> C(m, n);
@@ -62,12 +61,10 @@ int main(int argc, const char **argv) {
   int64_t num_flops = (2 * int64_t(m) * int64_t(n) * int64_t(k)) + (2 * int64_t(m) * int64_t(n));
   double tcublas = timer.elapsed_millis() / g_timing_iterations;
   double cublas_flops = double(num_flops) / tcublas / 1.0e6;
-  typedef gemm::blas_scaled_epilogue<float, float, float> epilogue_op_t;
-  epilogue_op_t epilogue(alpha, beta);
   for (int i = 0; i < g_timing_iterations+2; i++) {
     if (i == 2) timer.start();
     printf("CUTLASS step %d\n",i);
-    gemm::dispatch<epilogue_op_t>(
+    gemm::dispatch(
         m,
         n,
         k,
@@ -75,9 +72,7 @@ int main(int argc, const char **argv) {
         beta,
         A.d_data(),
         B.d_data(),
-        C2.d_data(),
-        stream,
-        false);
+        C2.d_data());
   }
   timer.stop();
   double tcutlass = timer.elapsed_millis() / g_timing_iterations;
