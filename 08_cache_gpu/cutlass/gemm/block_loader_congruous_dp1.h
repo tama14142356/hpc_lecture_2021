@@ -7,14 +7,12 @@ namespace gemm {
 template <
     int ItemsPerBlockY,           ///< Number of threads in each thread block (blockDim.x)
     int ItemsPerBlockK,        ///< Extent of block-wide tile in float along the K-axis (height)
-    int ItemsPerBlockX,        ///< Extent of block-wide tile in float along the L-axis (width)
-    int LeadingDimAlignBytes   ///< Byte alignment of input matrix leading dimension
+    int ItemsPerBlockX        ///< Extent of block-wide tile in float along the L-axis (width)
 >
 struct block_loader<
     ItemsPerBlockY,
     ItemsPerBlockK,
     ItemsPerBlockX,
-    LeadingDimAlignBytes,
     load_algorithm::CongruousCopy>  ///< Algorithm for loading a shared tile of KxL matrix data (CongruousCopy specialization)
 {
     enum
@@ -29,12 +27,10 @@ struct block_loader<
         ThreadDpVectors = divide_assert<BlockDpVectors, ItemsPerBlockY>::value,
     };
 
-    /// Data movement type, coarsened by LeadingDimAlignBytes, capped by the
-    /// smaller of either ThreadDpVectors or ItemsPerBlockX
     typedef io_vector<
             float,
             __NV_STD_MIN(ThreadDpVectors, ItemsPerBlockX),
-            LeadingDimAlignBytes>
+            16>
         ldg_vector_t;
 
     enum

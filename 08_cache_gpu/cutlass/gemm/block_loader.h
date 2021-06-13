@@ -26,7 +26,6 @@ template <
     int BlockThreads,                       ///< Number of threads in each thread block (blockDim.x)
     int BlockDpVectorsK,                    ///< Extent of block-wide tile in float along the K-axis (height)
     int BlockDpVectorsL,                    ///< Extent of block-wide tile in float along the L-axis (width)
-    int LeadingDimAlignBytes,               ///< Byte alignment of input matrix leading dimension
     load_algorithm::kind_t LoadAlgorithm>   ///< Algorithm for loading a shared tile of KxL matrix data
 struct block_loader
 {

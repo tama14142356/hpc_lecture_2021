@@ -5,17 +5,15 @@ namespace cutlass {
 namespace gemm {
 
 template <
-    int BlockThreads,           ///< Number of threads in each thread block (blockDim.x)
-    int BlockDpVectorsK,        ///< Extent of block-wide tile in float along the K-axis (height)
-    int BlockDpVectorsL,        ///< Extent of block-wide tile in float along the L-axis (width)
-    int LeadingDimAlignBytes    ///< Byte alignment of input matrix leading dimension
+    int ItemsPerBlockY,
+    int ItemsPerBlockK,
+    int ItemsPerBlockX
     >
 struct block_loader<
-    BlockThreads,
-    BlockDpVectorsK,
-    BlockDpVectorsL,
-    LeadingDimAlignBytes,
-    load_algorithm::CrosswiseCopy>  ///< Algorithm for loading a shared tile of KxL matrix data (CrosswiseCopy specialization)
+    ItemsPerBlockY,
+    ItemsPerBlockK,
+    ItemsPerBlockX,
+    load_algorithm::CrosswiseCopy>
 {
     //-------------------------------------------------------------------------
     // Constants and types
@@ -23,31 +21,23 @@ struct block_loader<
 
     enum
     {
-        /// Number of float in a float
-        DpVectorItems = divide_assert<sizeof(float), sizeof(float)>::value,
-
-        /// Number of float in a block-wide tile
-        BlockDpVectors = BlockDpVectorsK * BlockDpVectorsL,
-
-        /// Number of float in a thread-tile
-        ThreadDpVectors = divide_assert<BlockDpVectors, BlockThreads>::value,
+        ItemsPerVector = 16,
+        BlockDpVectors = ItemsPerBlockK * ItemsPerBlockX
     };
 
-    /// Data movement type, coarsened by LeadingDimAlignBytes, capped by the
-    /// smaller of either ThreadDpVectors or BlockDpVectorsK
     typedef io_vector<
             float,
-            __NV_STD_MIN(ThreadDpVectors, BlockDpVectorsK),
-            LeadingDimAlignBytes>
+            ItemsPerBlockK,
+            ItemsPerVector>
         ldg_vector_t;
 
     enum
     {
         /// Number of float per ldg_vector_t
-        LdgVectorDpVectors = ldg_vector_t::VectorItems,
+        LdgVectorDpVectors = 4,
 
         /// Number of float per ldg_vector_t
-        LdgVectorItems = LdgVectorDpVectors * DpVectorItems,
+        LdgVectorItems = LdgVectorDpVectors,
 
 
 
@@ -55,18 +45,18 @@ struct block_loader<
         BlockLdgVectors = divide_assert<BlockDpVectors, LdgVectorDpVectors>::value,
 
         /// Extent of the block-wide tile in ldg_vector_t along K-axis
-        BlockLdgVectorsK = divide_assert<BlockDpVectorsK, LdgVectorDpVectors>::value,
+        BlockLdgVectorsK = divide_assert<ItemsPerBlockK, LdgVectorDpVectors>::value,
 
         /// Extent of the block-wide tile in ldg_vector_t along L-axis
-        BlockLdgVectorsL = BlockDpVectorsL,
+        BlockLdgVectorsL = ItemsPerBlockX,
 
 
 
         /// Number of ldg_vector_t within each thread-tile
-        ThreadLdgVectors = divide_assert<BlockLdgVectors, BlockThreads>::value,
+        ThreadLdgVectors = divide_assert<BlockLdgVectors, ItemsPerBlockY>::value,
 
         /// Extent of the thread tile in ldg_vector_t along K-axis
-        ThreadLdgVectorsK = __NV_STD_MAX(1, (BlockLdgVectorsK / BlockThreads)),
+        ThreadLdgVectorsK = __NV_STD_MAX(1, (BlockLdgVectorsK / ItemsPerBlockY)),
 
         /// Extent of the thread tile in ldg_vector_t along L-axis
         ThreadLdgVectorsL = divide_assert<ThreadLdgVectors, ThreadLdgVectorsK>::value,
@@ -74,7 +64,7 @@ struct block_loader<
 
 
         /// Number of ldg_vector_t within each stripmine-tile
-        StripmineLdgVectors = BlockThreads,
+        StripmineLdgVectors = ItemsPerBlockY,
 
         /// Extent of the stripmine tile in ldg_vector_t along K-axis
         StripmineLdgVectorsK = __NV_STD_MIN(BlockLdgVectorsK, StripmineLdgVectors),
@@ -222,14 +212,14 @@ struct block_loader<
      *
      * NB: To facilitate padding for avoiding shared memory bank conflicts, we
      * allow the row stride SmemDpVectorsL to be arbitrarily bigger than the
-     * tile width BlockDpVectorsL.
+     * tile width ItemsPerBlockX.
      */
     template <int SmemDpVectorsL>
     inline __device__
     void commit(
-        float (&scratch_tile)[BlockDpVectorsK][SmemDpVectorsL])
+        float (&scratch_tile)[ItemsPerBlockK][SmemDpVectorsL])
     {
-        static_assert(SmemDpVectorsL >= BlockDpVectorsL, "Row stride must be >= tile width.");
+        static_assert(SmemDpVectorsL >= ItemsPerBlockX, "Row stride must be >= tile width.");
 
         // Outer thread-tile ldg_vector_t iteration (K-axis)
         #pragma unroll

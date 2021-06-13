@@ -62,7 +62,6 @@ struct block_task
       ItemsPerBlockY,
       ItemsPerBlockK,
       ItemsPerBlockX,
-      16,
       load_algorithm::CongruousCopy>
     block_loader_a_t;
 
@@ -72,7 +71,6 @@ struct block_task
       ItemsPerBlockY,
       ItemsPerBlockK,
       ItemsPerBlockX,
-      16,
       load_algorithm::CrosswiseCopy>
     block_loader_b_t;
 
