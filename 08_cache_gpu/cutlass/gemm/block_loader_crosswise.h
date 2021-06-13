@@ -22,7 +22,7 @@ struct block_loader<
     enum
     {
         ItemsPerVector = 16,
-        BlockDpVectors = ItemsPerBlockK * ItemsPerBlockX
+        ItemsPerBlock = ItemsPerBlockK * ItemsPerBlockX
     };
 
     typedef io_vector<
@@ -36,13 +36,8 @@ struct block_loader<
         /// Number of float per ldg_vector_t
         ItemsPerVectorX = 4,
 
-        /// Number of float per ldg_vector_t
-        LdgVectorItems = ItemsPerVectorX,
-
-
-
         /// Total number of ldg_vector_t within each block-wide tile
-        BlockLdgVectors = divide_assert<BlockDpVectors, ItemsPerVectorX>::value,
+        BlockLdgVectors = divide_assert<ItemsPerBlock, ItemsPerVectorX>::value,
 
         /// Extent of the block-wide tile in ldg_vector_t along K-axis
         BlockLdgVectorsK = divide_assert<ItemsPerBlockK, ItemsPerVectorX>::value,
@@ -146,7 +141,7 @@ struct block_loader<
     {
         matrix_ldgvecs_l = matrix_items_l;
         matrix_ldgvec_stride_k = matrix_items_stride_k;
-        matrix_ldgvec_stride_l = (matrix_items_stride_l / LdgVectorItems);
+        matrix_ldgvec_stride_l = (matrix_items_stride_l / ItemsPerVectorX);
 
         // ldg_vector_t coordinates (l, k) of thread-tile within the block-wide tile
         block_thread_ldgvec_coords = make_int2(
@@ -159,7 +154,7 @@ struct block_loader<
             0);    // k-coordinate
 
         // Iteration span in ldg_vector_t
-        int span_ldgvec_k = block_end_item_k / LdgVectorItems;
+        int span_ldgvec_k = block_end_item_k / ItemsPerVectorX;
 
 
 
