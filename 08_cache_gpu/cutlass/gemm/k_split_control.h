@@ -115,51 +115,6 @@ struct k_split_control
         return __NV_STD_MIN(next_start_k, dim_k);
     }
 
-
-    /**
-     * Whether the thread block is a secondary accumulator in an inter-block
-     * k-splitting scheme
-     */
-    inline __device__
-    bool is_secondary_accumulator()
-    {
-        return (blockIdx.z > 0);
-    }
-
-
-    /**
-     * Wait for predecessor thread block(s) to produce the exclusive
-     * partial-sums for this block-wide tile
-     */
-    inline __device__
-    void wait()
-    {
-        // Wait on semaphore
-        if ((use_semaphore) && (blockIdx.z > 0))
-        {
-            if (threadIdx.x == 0)
-            {
-                int bid = (blockIdx.y * gridDim.x) + blockIdx.x;
-                int hash = bid % NumFlagsSplitK;
-                int found;
-                int looking = blockIdx.z;
-                while (true)
-                {
-                    asm volatile ("ld.global.cg.u32 %0, [%1];\n" : "=r"(found) : "l"(d_flags + hash));
-
-                    if (found == looking)
-                        break;
-
-                    /// Fence to keep load from being hoisted from the loop
-                    __syncwarp(0x00000001);
-                }
-            }
-
-            __syncthreads();
-        }
-    }
-
-
     /**
      * Signal the successor thread_block(s) that the inclusive partial-sums
      * from this block-wide tile are available
@@ -203,44 +158,6 @@ struct k_split_control
         d_flags(d_flags),
         split_k(dim_k)
     {
-        // Compute wave efficiency
-        float wave_efficiency = get_wave_efficiency(
-            sm_count,
-            max_sm_occupancy,
-            block_dims,
-            grid_dims);
-
-        // Update split-k if wave efficiency is less than some threshold
-        if (wave_efficiency < 0.9)
-        {
-            int num_threadblocks = grid_dims.x * grid_dims.y * grid_dims.z;
-
-            // Ideal number of thread blocks in grid
-            int ideal_threadblocks = lcm(sm_count, num_threadblocks);
-
-            // Desired number of partitions to split K-axis into
-            int num_partitions = ideal_threadblocks / num_threadblocks;
-
-            // Compute new k-split share
-            int new_split_k = (dim_k + num_partitions - 1) / num_partitions;
-
-            // Round split_k share to the nearest block_task_policy_t::BlockItemsK
-            new_split_k = round_nearest(new_split_k, block_tile_items_k);
-
-            // Recompute k-splitting factor with new_split_k
-            num_partitions = (dim_k + new_split_k - 1) / new_split_k;
-
-            // Update grid dims and k if we meet the minimum number of iterations worth the overhead of splitting
-            int min_iterations_k = 8;
-
-            if (((new_split_k / block_tile_items_k) > min_iterations_k) &&    // We're going to go through at least this many k iterations
-                (sm_count * max_sm_occupancy < NumFlagsSplitK))             // We have enough semaphore flags allocated
-            {
-                grid_dims.z = num_partitions;
-                split_k = new_split_k;
-            }
-        }
-
         use_semaphore = (grid_dims.z > 1);
     }
 
@@ -254,23 +171,6 @@ struct k_split_control
 
     {
         cudaError error = cudaSuccess;
-
-        if (use_semaphore)
-        {
-            int block_threads = 128;
-            int grid_dims = (NumFlagsSplitK + block_threads - 1) / block_threads;
-
-            prepare_kernel<<<grid_dims, block_threads, 0, stream>>>(d_flags);
-
-            // Check for failure to launch
-            if (CUDA_PERROR_DEBUG(error = cudaPeekAtLastError()))
-                return error;
-
-            // Sync the stream if specified to flush runtime errors
-            if (debug_synchronous && (CUDA_PERROR_DEBUG(error = cudaStreamSynchronize(stream))))
-                return error;
-        }
-
         return error;
     }
 

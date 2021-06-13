@@ -523,14 +523,6 @@ struct block_task_wmma
      */
     inline __device__ void epilogue()
     {
-        // Wait for predecessor thread block(s) to produce partial-sums
-        k_split.wait();
-
-        // Configure epilogue as to whether the thread block is a secondary
-        // accumulator in an inter-block k-splitting scheme
-        if (k_split.is_secondary_accumulator())
-            epilogue_op.set_secondary_accumulator();
-
         // Whether or not the addend from C needs loading
         bool must_init_addend = epilogue_op.must_init_addend();
 

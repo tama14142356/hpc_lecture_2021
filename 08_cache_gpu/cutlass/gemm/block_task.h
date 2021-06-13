@@ -411,15 +411,6 @@ struct block_task
     __forceinline__ __device__
     void epilogue()
     {
-        // Wait for predecessor thread block(s) to produce block-wide tile of
-        // exclsuive partial-sums
-        k_split.wait();
-
-        // Configure epilogue as to whether the thread block is a secondary
-        // accumulator in an inter-block k-splitting scheme
-        if (k_split.is_secondary_accumulator())
-            epilogue_op.set_secondary_accumulator();
-
         // Whether the addend from C needs loading
         bool must_init_addend = epilogue_op.must_init_addend();
 

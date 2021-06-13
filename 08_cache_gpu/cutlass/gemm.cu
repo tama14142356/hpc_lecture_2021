@@ -13,9 +13,9 @@
 using namespace cutlass;
 
 int main(int argc, const char **argv) {
-  int m = 4096; //10240;
+  int m = 10240;
   int k = 4096;
-  int n = 4096;
+  int n = 8192;
   float alpha = 1.0;
   float beta = 0.0;
   static const matrix_transform_t::kind_t TransformA = matrix_transform_t::NonTranspose;
@@ -41,6 +41,7 @@ int main(int argc, const char **argv) {
   gpu_timer timer;
   for (int i = 0; i < g_timing_iterations+2; i++) {
     if (i == 2) timer.start();
+    printf("CUBLAS step %d\n",i);
     CUDA_PERROR(cublasSgemm(
                             g_cublas_handle,
                             (cublasOperation_t) TransformA,
@@ -65,6 +66,7 @@ int main(int argc, const char **argv) {
   epilogue_op_t epilogue(alpha, beta);
   for (int i = 0; i < g_timing_iterations+2; i++) {
     if (i == 2) timer.start();
+    printf("CUTLASS step %d\n",i);
     gemm::dispatch<epilogue_op_t>(
         m,
         n,
