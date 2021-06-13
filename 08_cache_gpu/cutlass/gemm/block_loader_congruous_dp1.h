@@ -8,15 +8,13 @@ template <
     int ItemsPerBlockY,           ///< Number of threads in each thread block (blockDim.x)
     int ItemsPerBlockK,        ///< Extent of block-wide tile in float along the K-axis (height)
     int ItemsPerBlockX,        ///< Extent of block-wide tile in float along the L-axis (width)
-    int LeadingDimAlignBytes,   ///< Byte alignment of input matrix leading dimension
-    bool AllowRaggedTiles       ///< Whether the input matrix's dimensions need not be an even-multiple of the block-wide tile dimensions
+    int LeadingDimAlignBytes   ///< Byte alignment of input matrix leading dimension
 >
 struct block_loader<
     ItemsPerBlockY,
     ItemsPerBlockK,
     ItemsPerBlockX,
     LeadingDimAlignBytes,
-    AllowRaggedTiles,
     load_algorithm::CongruousCopy>  ///< Algorithm for loading a shared tile of KxL matrix data (CongruousCopy specialization)
 {
     enum
@@ -205,27 +203,10 @@ struct block_loader<
             #pragma unroll
             for (int thread_ldgvec_l = 0; thread_ldgvec_l < ThreadLdgVectorsL; ++thread_ldgvec_l)
             {
-                // Linear index of ldg_vector_t load
-                int ldgvec_idx = (thread_ldgvec_k * ThreadLdgVectorsL) + thread_ldgvec_l;
-
-                // Unpack predicate guard
-                predicate_mask_t valid = ((guard >> ldgvec_idx) & 1);
-
-                if (!AllowRaggedTiles || valid)
-                {
-                    // Perform load
-                    thread_tile[thread_ldgvec_k][thread_ldgvec_l].load(
-                        d_matrix_ldgvecs +
-                        (thread_ldgvec_k * StripmineLdgVectorsK * matrix_ldgvec_stride_k) +
-                        (thread_ldgvec_l * StripmineLdgVectorsL * matrix_ldgvec_stride_l));
-                }
-                else
-                {
-                    // Zero-initialize
-                    #pragma unroll
-                    for (int dpvec = 0; dpvec < LdgVectorDpVectors; ++dpvec)
-                        thread_tile[thread_ldgvec_k][thread_ldgvec_l].buff[dpvec] = 0;
-                }
+                thread_tile[thread_ldgvec_k][thread_ldgvec_l].load(
+                    d_matrix_ldgvecs +
+                    (thread_ldgvec_k * StripmineLdgVectorsK * matrix_ldgvec_stride_k) +
+                    (thread_ldgvec_l * StripmineLdgVectorsL * matrix_ldgvec_stride_l));
             }
         }
         d_matrix_ldgvecs += (matrix_ldgvec_stride_k * BlockLdgVectorsK);

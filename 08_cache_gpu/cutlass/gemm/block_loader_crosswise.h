@@ -8,14 +8,13 @@ template <
     int BlockThreads,           ///< Number of threads in each thread block (blockDim.x)
     int BlockDpVectorsK,        ///< Extent of block-wide tile in float along the K-axis (height)
     int BlockDpVectorsL,        ///< Extent of block-wide tile in float along the L-axis (width)
-    int LeadingDimAlignBytes,   ///< Byte alignment of input matrix leading dimension
-    bool AllowRaggedTiles>      ///< Whether the input matrix's dimensions need not be an even-multiple of the block-wide tile dimensions
+    int LeadingDimAlignBytes    ///< Byte alignment of input matrix leading dimension
+    >
 struct block_loader<
     BlockThreads,
     BlockDpVectorsK,
     BlockDpVectorsL,
     LeadingDimAlignBytes,
-    AllowRaggedTiles,
     load_algorithm::CrosswiseCopy>  ///< Algorithm for loading a shared tile of KxL matrix data (CrosswiseCopy specialization)
 {
     //-------------------------------------------------------------------------
@@ -182,46 +181,6 @@ struct block_loader<
         // Iteration range in "whole-k" block-wide tiles
         wholek_tiles_remaining = span_ldgvec_k / BlockLdgVectorsK;
 
-        // Extent of final residue-tile in ldg_vector_t along K-axis
-        int residue_ldgvecs_k = span_ldgvec_k % BlockLdgVectorsK;
-
-        // Initialize I/O predicates
-        if (AllowRaggedTiles)
-        {
-            // Outer thread-tile ldg_vector_t iteration (K-axis)
-            #pragma unroll
-            for (int thread_ldgvec_k = 0; thread_ldgvec_k < ThreadLdgVectorsK; ++thread_ldgvec_k)
-            {
-                int block_ldgvec_k = block_thread_ldgvec_coords.y + (thread_ldgvec_k * StripmineLdgVectorsK);
-
-                // Whether block_ldgvec_coords.y is valid in the final residue tile
-                predicate_mask_t valid_k = (block_ldgvec_k < residue_ldgvecs_k);
-
-                // Inner thread-tile ldg_vector_t iteration (L-axis)
-                #pragma unroll
-                for (int thread_ldgvec_l = 0; thread_ldgvec_l < ThreadLdgVectorsL; ++thread_ldgvec_l)
-                {
-                    int block_ldgvec_l = block_thread_ldgvec_coords.x + (thread_ldgvec_l * StripmineLdgVectorsL);
-
-                    // Whether block_ldgvec_coords.x is valid any block-wide tile
-                    predicate_mask_t valid_l = (matrix_block_ldgvec_coords.x + block_ldgvec_l < matrix_ldgvecs_l);
-
-                    // Linear index of ldg_vector_t load
-                    int ldgvec_idx = thread_ldgvec_l + (thread_ldgvec_k * ThreadLdgVectorsL);
-
-                    // Set predicate guard bits
-                    guard |= (valid_l << ldgvec_idx);
-                    residue_guard |= ((valid_l & valid_k) << ldgvec_idx);
-                }
-            }
-
-            // Promote residue-guard to primary-guard if no full tiles remain
-            if (!wholek_tiles_remaining)
-            {
-                guard = residue_guard;
-            }
-        }
-
         // Update the input pointer to be matrix_thread_ldgvec_coords
         this->d_matrix_ldgvecs =
             reinterpret_cast<ldg_vector_t*>(d_matrix_items) +
@@ -248,27 +207,10 @@ struct block_loader<
             #pragma unroll
             for (int thread_ldgvec_l = 0; thread_ldgvec_l < ThreadLdgVectorsL; ++thread_ldgvec_l)
             {
-                // Linear index of ldg_vector_t load
-                int ldgvec_idx = (thread_ldgvec_k * ThreadLdgVectorsL) + thread_ldgvec_l;
-
-                // Unpack predicate guard
-                predicate_mask_t valid = ((guard >> ldgvec_idx) & 1);
-
-                if (!AllowRaggedTiles || valid)
-                {
-                    // Perform load
-                    thread_tile[thread_ldgvec_k][thread_ldgvec_l].load(
-                        d_matrix_ldgvecs +
-                        (thread_ldgvec_k * StripmineLdgVectorsK * matrix_ldgvec_stride_k) +
-                        (thread_ldgvec_l * StripmineLdgVectorsL * matrix_ldgvec_stride_l));
-                }
-                else
-                {
-                    // Zero-initialize
-                    #pragma unroll
-                    for (int dpvec = 0; dpvec < LdgVectorDpVectors; ++dpvec)
-                        thread_tile[thread_ldgvec_k][thread_ldgvec_l].buff[dpvec] = 0;
-                }
+                thread_tile[thread_ldgvec_k][thread_ldgvec_l].load(
+                    d_matrix_ldgvecs +
+                    (thread_ldgvec_k * StripmineLdgVectorsK * matrix_ldgvec_stride_k) +
+                    (thread_ldgvec_l * StripmineLdgVectorsL * matrix_ldgvec_stride_l));
             }
         }
         d_matrix_ldgvecs += (matrix_ldgvec_stride_k * BlockLdgVectorsK);
