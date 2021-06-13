@@ -13,7 +13,7 @@
 using namespace cutlass;
 
 int main(int argc, const char **argv) {
-  int m = 10240;
+  int m = 4096; //10240;
   int k = 4096;
   int n = 4096;
   float alpha = 1.0;

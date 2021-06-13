@@ -146,7 +146,7 @@ launch_configuration dispatch(
   config.block = dim3(64);
   int dynamic_smem_bytes = 0;
   int max_sm_occupancy = 8;
-  config.grid = grid_raster_t::grid_dims(m, n);
+  dim3 grid = grid_raster_t::grid_dims(m, n);
   int sm_count;
   get_sm_count(sm_count);
   int *d_flags;
@@ -162,7 +162,7 @@ launch_configuration dispatch(
                           config.grid);
   config.split_k = k_split.split_k;
   gemm::kernel<epilogue_op_t>
-    <<< config.grid,
+    <<< grid,
     config.block,
     dynamic_smem_bytes,
     stream >>>(
