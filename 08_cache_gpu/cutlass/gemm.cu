@@ -10,7 +10,7 @@
 #include "util/matrix.h"
 #include "util/timer.h"
 
-using namespace cutlass;
+//using namespace cutlass;
 
 int main(int argc, const char **argv) {
   int m = 10240;
@@ -40,7 +40,6 @@ int main(int argc, const char **argv) {
   gpu_timer timer;
   for (int i = 0; i < g_timing_iterations+2; i++) {
     if (i == 2) timer.start();
-    printf("CUBLAS step %d\n",i);
     CUDA_PERROR(cublasSgemm(
                             g_cublas_handle,
                             (cublasOperation_t) TransformA,
@@ -61,15 +60,15 @@ int main(int argc, const char **argv) {
   int64_t num_flops = (2 * int64_t(m) * int64_t(n) * int64_t(k)) + (2 * int64_t(m) * int64_t(n));
   double tcublas = timer.elapsed_millis() / g_timing_iterations;
   double cublas_flops = double(num_flops) / tcublas / 1.0e6;
+  int tile = 64;
+  dim3 block = dim3(tile);
+  dim3 grid = dim3((m+tile-1)/tile, (n+tile-1)/tile);
   for (int i = 0; i < g_timing_iterations+2; i++) {
     if (i == 2) timer.start();
-    printf("CUTLASS step %d\n",i);
-    gemm::dispatch(
+    kernel<<< grid, block >>>(
         m,
         n,
         k,
-        alpha,
-        beta,
         A.d_data(),
         B.d_data(),
         C2.d_data());
