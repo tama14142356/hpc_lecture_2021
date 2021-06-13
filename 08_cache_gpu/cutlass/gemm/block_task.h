@@ -49,8 +49,8 @@ struct block_task
 
     /// Thread block rasterization helper type
     typedef grid_raster<
-      64,
-      64,
+      ItemsPerBlockY,
+      ItemsPerBlockX,
       matrix_transform_t::NonTranspose,
       matrix_transform_t::NonTranspose,
       grid_raster_strategy::Default>
@@ -59,64 +59,32 @@ struct block_task
 
     /// Tile loader type for matrix A
     typedef block_loader<
-      64,                                       // BlockThreads
-      8,                                    // ItemsPerBlockK
-      64,                                        // ItemsPerBlockL
-      float,                                            // value_t
-      16,                                          // MatrixAlignBytes
-      false,                                   // AllowRaggedTiles
-      float,                                        // float
+      ItemsPerBlockY,
+      ItemsPerBlockK,
+      ItemsPerBlockX,
+      16,
+      false,
       load_algorithm::CongruousCopy>
     block_loader_a_t;
 
 
     /// Tile loader type for matrix B
     typedef block_loader<
-      64,                                       // BlockThreads
-      8,                                    // ItemsPerBlockK
-      64,                                        // ItemsPerBlockL
-      float,                                            // value_t
-      16,                                          // MatrixAlignBytes
-      false,                                   // AllowRaggedTiles
-      float,                                        // float
+      ItemsPerBlockY,
+      ItemsPerBlockK,
+      ItemsPerBlockX,
+      16,
+      false,
       load_algorithm::CrosswiseCopy>
     block_loader_b_t;
-
-
-    /// Shared memory layout for a prefetch page
-    struct page_storage_t
-    {
-        /// Tile of A
-        float __align__(16) block_a[ItemsPerBlockK][ItemsPerBlockY];
-
-        /// Tile of B
-        float __align__(16) block_b[ItemsPerBlockK][ItemsPerBlockX];
-    };
-
 
     /// Shared memory layout for scratch storage
     struct scratch_storage_t
     {
-        /// Prefetch pages
-        page_storage_t pages;
-
-        /// Accumulator shared scratch
+        float __align__(16) block_a[ItemsPerBlockK][ItemsPerBlockY];
+        float __align__(16) block_b[ItemsPerBlockK][ItemsPerBlockX];
         typename thread_accumulator_t::scratch_storage_t accum_scratch;
     };
-
-
-    //-------------------------------------------------------------------------
-    // Assert assumptions
-    //-------------------------------------------------------------------------
-
-    // Ensure we have at least two unrolled innermost loop iterations (one to prefetch
-    // the next global tile and then one to prefetch the first strip of it from shared)
-    static_assert ((ItemsPerBlockK >= 2), "ItemsPerBlockK must be >= 2.");
-
-
-    //-------------------------------------------------------------------------
-    // Members
-    //-------------------------------------------------------------------------
 
     /// Scratch storage reference
     scratch_storage_t *scratch;
@@ -226,20 +194,16 @@ struct block_task
             dim_m,                                                          // matrix_values_l
             dim_m,
             1,
-            make_int2(                                                      // block_begin_item_coords
-                grid_raster.block_item_coords.y,
-                block_item_coords_k),
-            block_end_item_k),                                              // block_end_item_k
+            ItemsPerBlockY * blockIdx.x,
+            dim_k),                                              // block_end_item_k
 
         loader_b(
             d_b,                                                            // d_matrix
             dim_n,
             1,
             dim_k,
-            make_int2(                                                      // block_begin_item_coords
-                grid_raster.block_item_coords.x,
-                block_item_coords_k),
-            block_end_item_k),                                              // block_end_item_k
+            ItemsPerBlockX * blockIdx.y,
+            dim_k),                                              // block_end_item_k
 
         accumulator(scratch->accum_scratch)
     {}
@@ -261,14 +225,14 @@ struct block_task
         for (int i = 0; i < VectorsPerThreadX; ++i)
         {
             slice_b[i].load(
-                &scratch->pages.block_b[tile_offset_k][thread_strip_offset_b + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
+                &scratch->block_b[tile_offset_k][thread_strip_offset_b + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
         }
 
         // Load A strip
         for (int i = 0; i < VectorsPerThreadY; ++i)
         {
             slice_a[i].load(
-                &scratch->pages.block_a[tile_offset_k][thread_strip_offset_a + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
+                &scratch->block_a[tile_offset_k][thread_strip_offset_a + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
         }
     }
 
@@ -341,12 +305,10 @@ struct block_task
             // Last strip commits global prefetch for next tile
             if ((tile_offset_k == ItemsPerBlockK - 1) && DoGlobalPrefetch)
             {
-                // If not using two pages of scratch tiles, protect the above prefetch loads from the committing writes below
                 __syncthreads();
-
                 // Commit global prefetch data to scratch page
-                loader_a.commit(scratch->pages.block_a);
-                loader_b.commit(scratch->pages.block_b);
+                loader_a.commit(scratch->block_a);
+                loader_b.commit(scratch->block_b);
 
                 __syncthreads();
             }
@@ -361,9 +323,7 @@ struct block_task
             if ((tile_offset_k == 0) && DoGlobalPrefetch)
             {
               loader_b.request();
-              loader_b.next();
               loader_a.request();
-              loader_a.next();
             }
 
             // Cast strip-mined loads to contiguous array of float
@@ -396,13 +356,11 @@ struct block_task
 
         // Request global prefetch of first tile
         loader_a.request();
-        loader_a.next();
         loader_b.request();
-        loader_b.next();
 
         // Commit global prefetch of first tile to shared memory
-        loader_a.commit(scratch->pages.block_a);
-        loader_b.commit(scratch->pages.block_b);
+        loader_a.commit(scratch->block_a);
+        loader_b.commit(scratch->block_b);
 
         // Advance to next A,B tiles in K-axis
         block_item_coords_k += ItemsPerBlockK;

@@ -84,10 +84,10 @@ struct load_algorithm
  * advance) for iterating over ranges of block-wide matrix tiles.
  *
  * Each iteration sequence produces a KxL (height-by-width) block-wide tile of
- * value_t in shared memory. The layout of the shared
- * block-wide tile is a row-major (L-major) tiling of dp_vector_t items, which are
- * themselves column-major (K-major) vectors of value_t.  Its dimensions are:
- *    K = BlockDpVectorsK * (sizeof(dp_vector_t) / sizeof(value_t)
+ * float in shared memory. The layout of the shared
+ * block-wide tile is a row-major (L-major) tiling of float items, which are
+ * themselves column-major (K-major) vectors of float.  Its dimensions are:
+ *    K = BlockDpVectorsK * (sizeof(float) / sizeof(float)
  *    L = BlockDpVectorsL
  *
  * NB: This generic class is not directly constructible.  Architecture- and
@@ -97,12 +97,10 @@ struct load_algorithm
  */
 template <
     int BlockThreads,                       ///< Number of threads in each thread block (blockDim.x)
-    int BlockDpVectorsK,                    ///< Extent of block-wide tile in dp_vector_t along the K-axis (height)
-    int BlockDpVectorsL,                    ///< Extent of block-wide tile in dp_vector_t along the L-axis (width)
-    typename value_t,                       ///< Input matrix value type
+    int BlockDpVectorsK,                    ///< Extent of block-wide tile in float along the K-axis (height)
+    int BlockDpVectorsL,                    ///< Extent of block-wide tile in float along the L-axis (width)
     int LeadingDimAlignBytes,               ///< Byte alignment of input matrix leading dimension
     bool AllowRaggedTiles,                  ///< Whether the input matrix's dimensions need not be an even-multiple of the block-wide tile dimensions
-    typename dp_vector_t,                   ///< Dot-product vector type along the K-axis
     load_algorithm::kind_t LoadAlgorithm>   ///< Algorithm for loading a shared tile of KxL matrix data
 struct block_loader
 {
@@ -112,11 +110,11 @@ struct block_loader
 
     /// Constructor
     block_loader(
-        value_t *d_matrix,              ///< Pointer to input matrix
-        int matrix_values_l,            ///< Extent of the input matrix in value_t along the L-axis
-        int matrix_values_stride_k,     ///< Distance in value_t within pitched-linear memory between successive coordinates along the K-axis
-        int matrix_values_stride_l,     ///< Distance in value_t within pitched-linear memory between successive coordinates along the L-axis
-        int2 block_begin_item_coords,   ///< Thread block's starting value_t coordinates (l, k) within the input matrix
+        float *d_matrix,              ///< Pointer to input matrix
+        int matrix_values_l,            ///< Extent of the input matrix in float along the L-axis
+        int matrix_values_stride_k,     ///< Distance in float within pitched-linear memory between successive coordinates along the K-axis
+        int matrix_values_stride_l,     ///< Distance in float within pitched-linear memory between successive coordinates along the L-axis
+        int2 block_begin_item_coords,   ///< Thread block's starting float coordinates (l, k) within the input matrix
         int block_end_item_k);          ///< Thread block's ending coordinate (k) within the input matrix (one-past)
 
     //-------------------------------------------------------------------------
@@ -144,7 +142,7 @@ struct block_loader
      */
     template <int _BlockDpVectorsL>
     void commit(
-        dp_vector_t (&scratch_tile)[BlockDpVectorsK][_BlockDpVectorsL]);
+        float (&scratch_tile)[BlockDpVectorsK][_BlockDpVectorsL]);
 
 };
 
