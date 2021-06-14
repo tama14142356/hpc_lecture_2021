@@ -58,22 +58,9 @@ struct block_task
     grid_raster_t;
 
 
-    /// Tile loader type for matrix A
-    typedef block_loader<
-      ThreadsPerBlock,
-      ItemsPerBlockK,
-      ItemsPerBlockX,
-      load_algorithm::CongruousCopy>
-    block_loader_a_t;
+    typedef block_loader<load_algorithm::CongruousCopy> block_loader_a_t;
 
-
-    /// Tile loader type for matrix B
-    typedef block_loader<
-      ThreadsPerBlock,
-      ItemsPerBlockK,
-      ItemsPerBlockX,
-      load_algorithm::CrosswiseCopy>
-    block_loader_b_t;
+    typedef block_loader<load_algorithm::CrosswiseCopy> block_loader_b_t;
 
     /// Shared memory layout for scratch storage
     struct scratch_storage_t

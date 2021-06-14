@@ -23,9 +23,6 @@ struct load_algorithm
 
 
 template <
-    int BlockThreads,                       ///< Number of threads in each thread block (blockDim.x)
-    int BlockDpVectorsK,                    ///< Extent of block-wide tile in float along the K-axis (height)
-    int BlockDpVectorsL,                    ///< Extent of block-wide tile in float along the L-axis (width)
     load_algorithm::kind_t LoadAlgorithm>   ///< Algorithm for loading a shared tile of KxL matrix data
 struct block_loader
 {
@@ -46,9 +43,7 @@ struct block_loader
 
     void next();
 
-    template <int _BlockDpVectorsL>
-    void commit(
-        float (&scratch_tile)[BlockDpVectorsK][_BlockDpVectorsL]);
+    void commit();
 
 };
 

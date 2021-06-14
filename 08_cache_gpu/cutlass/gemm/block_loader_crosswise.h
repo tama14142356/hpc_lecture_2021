@@ -4,15 +4,8 @@
 namespace cutlass {
 namespace gemm {
 
-template <
-    int ThreadsPerBlock,
-    int ItemsPerBlockK,
-    int ItemsPerBlockX
-    >
+template<>
 struct block_loader<
-    ThreadsPerBlock,
-    ItemsPerBlockK,
-    ItemsPerBlockX,
     load_algorithm::CrosswiseCopy>
 {
     //-------------------------------------------------------------------------
@@ -21,11 +14,31 @@ struct block_loader<
 
     enum
     {
+
+        ItemsPerVectorY = 4,
         ItemsPerVectorX = 4,
-        ItemsPerVector = 16,
-        ItemsPerBlock = ItemsPerBlockK * ItemsPerBlockX,
-        VectorsPerBlock = ItemsPerBlock / ItemsPerVectorX,
-        VectorsPerBlockK = ItemsPerBlockK / ItemsPerVectorX,
+        VectorsPerThreadY = 2,
+        VectorsPerThreadX = 2,
+        ThreadsPerWarp = 32,
+        ThreadsPerWarpY = 4,
+        ThreadsPerWarpX = ThreadsPerWarp / ThreadsPerWarpY, // 8
+        WarpsPerBlockY = 2,
+        WarpsPerBlockX = 1,
+        ItemsPerThreadY = VectorsPerThreadY * ItemsPerVectorY, // 8
+        ItemsPerThreadX = VectorsPerThreadX * ItemsPerVectorX, // 8
+        ItemsPerWarpY = ThreadsPerWarpY * ItemsPerThreadY, // 32
+        ItemsPerWarpX = ThreadsPerWarpX * ItemsPerThreadX, // 64
+        ItemsPerBlockY = WarpsPerBlockY * ItemsPerWarpY, // 64
+        ItemsPerBlockX = WarpsPerBlockX * ItemsPerWarpX, // 64
+	ThreadsPerBlock = ThreadsPerWarp * WarpsPerBlockY * WarpsPerBlockX, // 64
+        ItemsPerBlockK = 8,
+
+        ItemsPerVector = ItemsPerVectorX * ItemsPerVectorY, // 16
+        ItemsPerBlock = ItemsPerBlockK * ItemsPerBlockX, // 512
+        ItemsPerThread = ItemsPerBlock / ThreadsPerBlock, // 8
+	VectorsPerBlock = ItemsPerBlock / ItemsPerVectorX, // 128
+	VectorsPerBlockX = ItemsPerBlockX / ItemsPerVectorX, // 16
+        VectorsPerBlockK = ItemsPerBlockK / ItemsPerVectorX, // 2
         VectorsPerBlockL = ItemsPerBlockX
     };
 

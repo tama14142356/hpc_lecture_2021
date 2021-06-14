@@ -4,25 +4,35 @@
 namespace cutlass {
 namespace gemm {
 
-template <
-    int ThreadsPerBlock,           ///< Number of threads in each thread block (blockDim.x)
-    int ItemsPerBlockK,        ///< Extent of block-wide tile in float along the K-axis (height)
-    int ItemsPerBlockX        ///< Extent of block-wide tile in float along the L-axis (width)
->
+template<>
 struct block_loader<
-    ThreadsPerBlock,
-    ItemsPerBlockK,
-    ItemsPerBlockX,
     load_algorithm::CongruousCopy>  ///< Algorithm for loading a shared tile of KxL matrix data (CongruousCopy specialization)
 {
     enum
     {
+        ItemsPerVectorY = 4,
         ItemsPerVectorX = 4,
-        ItemsPerVector = 16,
-        ItemsPerBlock = ItemsPerBlockK * ItemsPerBlockX,
-        ItemsPerThread = ItemsPerBlock / ThreadsPerBlock,
-	VectorsPerBlock = ItemsPerBlock / ItemsPerVectorX,
-	VectorsPerBlockX = ItemsPerBlockX / ItemsPerVectorX
+        VectorsPerThreadY = 2,
+        VectorsPerThreadX = 2,
+        ThreadsPerWarp = 32,
+        ThreadsPerWarpY = 4,
+        ThreadsPerWarpX = ThreadsPerWarp / ThreadsPerWarpY, // 8
+        WarpsPerBlockY = 2,
+        WarpsPerBlockX = 1,
+        ItemsPerThreadY = VectorsPerThreadY * ItemsPerVectorY, // 8
+        ItemsPerThreadX = VectorsPerThreadX * ItemsPerVectorX, // 8
+        ItemsPerWarpY = ThreadsPerWarpY * ItemsPerThreadY, // 32
+        ItemsPerWarpX = ThreadsPerWarpX * ItemsPerThreadX, // 64
+        ItemsPerBlockY = WarpsPerBlockY * ItemsPerWarpY, // 64
+        ItemsPerBlockX = WarpsPerBlockX * ItemsPerWarpX, // 64
+	ThreadsPerBlock = ThreadsPerWarp * WarpsPerBlockY * WarpsPerBlockX, // 64
+        ItemsPerBlockK = 8,
+
+        ItemsPerVector = ItemsPerVectorX * ItemsPerVectorY, // 16
+        ItemsPerBlock = ItemsPerBlockK * ItemsPerBlockX, // 512
+        ItemsPerThread = ItemsPerBlock / ThreadsPerBlock, // 8
+	VectorsPerBlock = ItemsPerBlock / ItemsPerVectorX, // 128
+	VectorsPerBlockX = ItemsPerBlockX / ItemsPerVectorX // 16
     };
 
     typedef io_vector<
@@ -36,16 +46,11 @@ struct block_loader<
         VectorsPerThread = VectorsPerBlock / ThreadsPerBlock,
         VectorsPerThreadK = VectorsPerThread,
 
-
-
-        /// Number of ldg_vector_t within each stripmine-tile
-        StripmineLdgVectors = ThreadsPerBlock,
-
         /// Extent of the stripmine tile in ldg_vector_t along L-axis
-        StripmineLdgVectorsL = __NV_STD_MIN(VectorsPerBlockX, StripmineLdgVectors),
+        ThreadsPerBlockL = VectorsPerBlockX, //ThreadsPerBlock),
 
         /// Extent of the stripmine tile in ldg_vector_t along K-axis
-        StripmineLdgVectorsK = divide_assert<StripmineLdgVectors, StripmineLdgVectorsL>::value,
+        ThreadsPerBlockK = divide_assert<ThreadsPerBlock, ThreadsPerBlockL>::value,
 
 
 
@@ -170,7 +175,7 @@ struct block_loader<
         {
             thread_tile[thread_ldgvec_k][0].load(
                 d_matrix_ldgvecs +
-                (thread_ldgvec_k * StripmineLdgVectorsK * matrix_ldgvec_stride_k));
+                (thread_ldgvec_k * ThreadsPerBlockK * matrix_ldgvec_stride_k));
         }
         d_matrix_ldgvecs += (matrix_ldgvec_stride_k * ItemsPerBlockK);
     }
@@ -194,7 +199,7 @@ struct block_loader<
         #pragma unroll
         for (int thread_ldgvec_k = 0; thread_ldgvec_k < VectorsPerThreadK; ++thread_ldgvec_k)
         {
-            int block_ldgvec_k = block_thread_ldgvec_coords.y + (thread_ldgvec_k * StripmineLdgVectorsK);
+            int block_ldgvec_k = block_thread_ldgvec_coords.y + (thread_ldgvec_k * ThreadsPerBlockK);
             int block_ldgvec_l = block_thread_ldgvec_coords.x;
             thread_tile[thread_ldgvec_k][0].store(
                 &scratch_tile[block_ldgvec_k][block_ldgvec_l * ItemsPerVectorX]);
