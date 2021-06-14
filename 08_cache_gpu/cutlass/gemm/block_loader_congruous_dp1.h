@@ -17,7 +17,7 @@ struct block_loader<
 {
     enum
     {
-        ItemsPerVectorX = 4,                                                                                                   
+        ItemsPerVectorX = 4,
         ItemsPerVector = 16,
         ItemsPerBlock = ItemsPerBlockK * ItemsPerBlockX,
         ItemsPerThread = ItemsPerBlock / ThreadsPerBlock,
@@ -31,19 +31,11 @@ struct block_loader<
 
     enum
     {
-        /// Number of float per ldg_vector_t
-        LdgVectorDpVectors = ldg_vector_t::VectorItems,
-
-        /// Number of float per ldg_vector_t
-        LdgVectorItems = LdgVectorDpVectors,
-
-
-
         /// Total number of ldg_vector_t within each block-wide tile
-        BlockLdgVectors = divide_assert<ItemsPerBlock, LdgVectorDpVectors>::value,
+        BlockLdgVectors = divide_assert<ItemsPerBlock, ItemsPerVectorX>::value,
 
         /// Extent of the block-wide tile in ldg_vector_t along L-axis
-        BlockLdgVectorsL = divide_assert<ItemsPerBlockX, LdgVectorDpVectors>::value,
+        BlockLdgVectorsL = divide_assert<ItemsPerBlockX, ItemsPerVectorX>::value,
 
         /// Extent of the block-wide tile in ldg_vector_t along K-axis
         BlockLdgVectorsK = ItemsPerBlockK,
@@ -73,7 +65,7 @@ struct block_loader<
 
 
         /// Alignment in float along L needed for committing prefetch
-        AlignmentDpVectorsL = LdgVectorDpVectors,
+        AlignmentDpVectorsL = ItemsPerVectorX,
     };
 
     /// Predicate bit vector
@@ -142,8 +134,8 @@ struct block_loader<
         guard(0),
         residue_guard(0)
     {
-        matrix_ldgvecs_l = matrix_items_l / LdgVectorItems;
-        matrix_ldgvec_stride_k = matrix_items_stride_k / LdgVectorItems,
+        matrix_ldgvecs_l = matrix_items_l / ItemsPerVectorX;
+        matrix_ldgvec_stride_k = matrix_items_stride_k / ItemsPerVectorX,
         matrix_ldgvec_stride_l = matrix_items_stride_l;
 
         // ldg_vector_t coordinates (l, k) of thread-tile within the block-wide tile
@@ -153,7 +145,7 @@ struct block_loader<
 
         // ldg_vector_t coordinates (l, k) of first block-wide tile within the input matrix
         int2 matrix_block_ldgvec_coords = make_int2(
-            matrix_block_item_coords / LdgVectorItems,     // l-coordinate
+            matrix_block_item_coords / ItemsPerVectorX,     // l-coordinate
             0);                    // k-coordinate
 
         // Iteration span in ldg_vector_t
@@ -232,7 +224,7 @@ struct block_loader<
                 int block_ldgvec_l = block_thread_ldgvec_coords.x + (thread_ldgvec_l * StripmineLdgVectorsL);
 
                 thread_tile[thread_ldgvec_k][thread_ldgvec_l].store(
-                    &scratch_tile[block_ldgvec_k][block_ldgvec_l * LdgVectorDpVectors]);
+                    &scratch_tile[block_ldgvec_k][block_ldgvec_l * ItemsPerVectorX]);
             }
         }
     }
