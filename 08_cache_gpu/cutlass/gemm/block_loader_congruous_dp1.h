@@ -5,29 +5,30 @@ namespace cutlass {
 namespace gemm {
 
 template <
-    int ItemsPerBlockY,           ///< Number of threads in each thread block (blockDim.x)
+    int ThreadsPerBlock,           ///< Number of threads in each thread block (blockDim.x)
     int ItemsPerBlockK,        ///< Extent of block-wide tile in float along the K-axis (height)
     int ItemsPerBlockX        ///< Extent of block-wide tile in float along the L-axis (width)
 >
 struct block_loader<
-    ItemsPerBlockY,
+    ThreadsPerBlock,
     ItemsPerBlockK,
     ItemsPerBlockX,
     load_algorithm::CongruousCopy>  ///< Algorithm for loading a shared tile of KxL matrix data (CongruousCopy specialization)
 {
     enum
     {
-        /// Number of float in a block-wide tile
-        BlockDpVectors = ItemsPerBlockK * ItemsPerBlockX,
+        ItemsPerVectorX = 4,                                                                                                   
+        ItemsPerVector = 16,
+        ItemsPerBlock = ItemsPerBlockK * ItemsPerBlockX,
 
         /// Number of float in a thread-tile
-        ThreadDpVectors = divide_assert<BlockDpVectors, ItemsPerBlockY>::value,
+        ThreadDpVectors = divide_assert<ItemsPerBlock, ThreadsPerBlock>::value,
     };
 
     typedef io_vector<
             float,
             __NV_STD_MIN(ThreadDpVectors, ItemsPerBlockX),
-            16>
+            ItemsPerVector>
         ldg_vector_t;
 
     enum
@@ -41,7 +42,7 @@ struct block_loader<
 
 
         /// Total number of ldg_vector_t within each block-wide tile
-        BlockLdgVectors = divide_assert<BlockDpVectors, LdgVectorDpVectors>::value,
+        BlockLdgVectors = divide_assert<ItemsPerBlock, LdgVectorDpVectors>::value,
 
         /// Extent of the block-wide tile in ldg_vector_t along L-axis
         BlockLdgVectorsL = divide_assert<ItemsPerBlockX, LdgVectorDpVectors>::value,
@@ -52,10 +53,10 @@ struct block_loader<
 
 
         /// Number of ldg_vector_t within each thread-tile
-        ThreadLdgVectors = divide_assert<BlockLdgVectors, ItemsPerBlockY>::value,
+        ThreadLdgVectors = divide_assert<BlockLdgVectors, ThreadsPerBlock>::value,
 
         /// Extent of the thread tile in ldg_vector_t along L-axis
-        ThreadLdgVectorsL = __NV_STD_MAX(1, (BlockLdgVectorsL / ItemsPerBlockY)),
+        ThreadLdgVectorsL = __NV_STD_MAX(1, (BlockLdgVectorsL / ThreadsPerBlock)),
 
         /// Extent of the thread tile in ldg_vector_t along K-axis
         ThreadLdgVectorsK = divide_assert<ThreadLdgVectors, ThreadLdgVectorsL>::value,
@@ -63,7 +64,7 @@ struct block_loader<
 
 
         /// Number of ldg_vector_t within each stripmine-tile
-        StripmineLdgVectors = ItemsPerBlockY,
+        StripmineLdgVectors = ThreadsPerBlock,
 
         /// Extent of the stripmine tile in ldg_vector_t along L-axis
         StripmineLdgVectorsL = __NV_STD_MIN(BlockLdgVectorsL, StripmineLdgVectors),

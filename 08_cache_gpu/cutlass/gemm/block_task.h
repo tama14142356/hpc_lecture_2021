@@ -21,15 +21,16 @@ struct block_task
         VectorsPerThreadX = 2,
         ThreadsPerWarp = 32,
         ThreadsPerWarpY = 4,
-        ThreadsPerWarpX = ThreadsPerWarp / ThreadsPerWarpY,
+        ThreadsPerWarpX = ThreadsPerWarp / ThreadsPerWarpY, // 8
         WarpsPerBlockY = 2,
         WarpsPerBlockX = 1,
-        ItemsPerThreadY = VectorsPerThreadY * ItemsPerVectorY,
-        ItemsPerThreadX = VectorsPerThreadX * ItemsPerVectorX,
-        ItemsPerWarpY = ThreadsPerWarpY * ItemsPerThreadY,
-        ItemsPerWarpX = ThreadsPerWarpX * ItemsPerThreadX,
-        ItemsPerBlockY = WarpsPerBlockY * ItemsPerWarpY,
-        ItemsPerBlockX = WarpsPerBlockX * ItemsPerWarpX,
+        ItemsPerThreadY = VectorsPerThreadY * ItemsPerVectorY, // 8
+        ItemsPerThreadX = VectorsPerThreadX * ItemsPerVectorX, // 8
+        ItemsPerWarpY = ThreadsPerWarpY * ItemsPerThreadY, // 32
+        ItemsPerWarpX = ThreadsPerWarpX * ItemsPerThreadX, // 64
+        ItemsPerBlockY = WarpsPerBlockY * ItemsPerWarpY, // 64
+        ItemsPerBlockX = WarpsPerBlockX * ItemsPerWarpX, // 64
+	ThreadsPerBlock = ThreadsPerWarp * WarpsPerBlockY * WarpsPerBlockX, // 64
         ItemsPerBlockK = 8,
     };
 
@@ -59,7 +60,7 @@ struct block_task
 
     /// Tile loader type for matrix A
     typedef block_loader<
-      ItemsPerBlockY,
+      ThreadsPerBlock,
       ItemsPerBlockK,
       ItemsPerBlockX,
       load_algorithm::CongruousCopy>
@@ -68,7 +69,7 @@ struct block_task
 
     /// Tile loader type for matrix B
     typedef block_loader<
-      ItemsPerBlockY,
+      ThreadsPerBlock,
       ItemsPerBlockK,
       ItemsPerBlockX,
       load_algorithm::CrosswiseCopy>

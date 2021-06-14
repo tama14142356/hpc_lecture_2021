@@ -5,12 +5,12 @@ namespace cutlass {
 namespace gemm {
 
 template <
-    int ItemsPerBlockY,
+    int ThreadsPerBlock,
     int ItemsPerBlockK,
     int ItemsPerBlockX
     >
 struct block_loader<
-    ItemsPerBlockY,
+    ThreadsPerBlock,
     ItemsPerBlockK,
     ItemsPerBlockX,
     load_algorithm::CrosswiseCopy>
@@ -21,8 +21,12 @@ struct block_loader<
 
     enum
     {
+        ItemsPerVectorX = 4,
         ItemsPerVector = 16,
-        ItemsPerBlock = ItemsPerBlockK * ItemsPerBlockX
+        ItemsPerBlock = ItemsPerBlockK * ItemsPerBlockX,
+        VectorsPerBlock = ItemsPerBlock / ItemsPerVectorX,
+        VectorsPerBlockK = ItemsPerBlockK / ItemsPerVectorX,
+        VectorsPerBlockL = ItemsPerBlockX
     };
 
     typedef io_vector<
@@ -33,25 +37,11 @@ struct block_loader<
 
     enum
     {
-        /// Number of float per ldg_vector_t
-        ItemsPerVectorX = 4,
-
-        /// Total number of ldg_vector_t within each block-wide tile
-        BlockLdgVectors = divide_assert<ItemsPerBlock, ItemsPerVectorX>::value,
-
-        /// Extent of the block-wide tile in ldg_vector_t along K-axis
-        BlockLdgVectorsK = divide_assert<ItemsPerBlockK, ItemsPerVectorX>::value,
-
-        /// Extent of the block-wide tile in ldg_vector_t along L-axis
-        BlockLdgVectorsL = ItemsPerBlockX,
-
-
-
         /// Number of ldg_vector_t within each thread-tile
-        ThreadLdgVectors = divide_assert<BlockLdgVectors, ItemsPerBlockY>::value,
+        ThreadLdgVectors = divide_assert<VectorsPerBlock, ThreadsPerBlock>::value,
 
         /// Extent of the thread tile in ldg_vector_t along K-axis
-        ThreadLdgVectorsK = __NV_STD_MAX(1, (BlockLdgVectorsK / ItemsPerBlockY)),
+        ThreadLdgVectorsK = __NV_STD_MAX(1, (VectorsPerBlockK / ThreadsPerBlock)),
 
         /// Extent of the thread tile in ldg_vector_t along L-axis
         ThreadLdgVectorsL = divide_assert<ThreadLdgVectors, ThreadLdgVectorsK>::value,
@@ -59,10 +49,10 @@ struct block_loader<
 
 
         /// Number of ldg_vector_t within each stripmine-tile
-        StripmineLdgVectors = ItemsPerBlockY,
+        StripmineLdgVectors = ThreadsPerBlock,
 
         /// Extent of the stripmine tile in ldg_vector_t along K-axis
-        StripmineLdgVectorsK = __NV_STD_MIN(BlockLdgVectorsK, StripmineLdgVectors),
+        StripmineLdgVectorsK = __NV_STD_MIN(VectorsPerBlockK, StripmineLdgVectors),
 
         /// Extent of the stripmine tile in ldg_vector_t along L-axis
         StripmineLdgVectorsL = divide_assert<StripmineLdgVectors, StripmineLdgVectorsK>::value,
@@ -145,8 +135,8 @@ struct block_loader<
 
         // ldg_vector_t coordinates (l, k) of thread-tile within the block-wide tile
         block_thread_ldgvec_coords = make_int2(
-            (threadIdx.x / BlockLdgVectorsK),                // l-coordinate
-            (threadIdx.x % BlockLdgVectorsK));               // k-coordinate
+            (threadIdx.x / VectorsPerBlockK),                // l-coordinate
+            (threadIdx.x % VectorsPerBlockK));               // k-coordinate
 
         // ldg_vector_t coordinates (l, k) of first block-wide tile within the input matrix
         int2 matrix_block_ldgvec_coords = make_int2(
@@ -164,7 +154,7 @@ struct block_loader<
             block_thread_ldgvec_coords.y + matrix_block_ldgvec_coords.y);
 
         // Iteration range in "whole-k" block-wide tiles
-        wholek_tiles_remaining = span_ldgvec_k / BlockLdgVectorsK;
+        wholek_tiles_remaining = span_ldgvec_k / VectorsPerBlockK;
 
         // Update the input pointer to be matrix_thread_ldgvec_coords
         this->d_matrix_ldgvecs =
@@ -198,7 +188,7 @@ struct block_loader<
                     (thread_ldgvec_l * StripmineLdgVectorsL * matrix_ldgvec_stride_l));
             }
         }
-        d_matrix_ldgvecs += (matrix_ldgvec_stride_k * BlockLdgVectorsK);
+        d_matrix_ldgvecs += (matrix_ldgvec_stride_k * VectorsPerBlockK);
     }
 
 
