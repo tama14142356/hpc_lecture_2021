@@ -20,14 +20,12 @@ struct block_loader<
         ItemsPerVectorX = 4,                                                                                                   
         ItemsPerVector = 16,
         ItemsPerBlock = ItemsPerBlockK * ItemsPerBlockX,
-
-        /// Number of float in a thread-tile
-        ThreadDpVectors = divide_assert<ItemsPerBlock, ThreadsPerBlock>::value,
+        ItemsPerThread = ItemsPerBlock / ThreadsPerBlock,
     };
 
     typedef io_vector<
             float,
-            __NV_STD_MIN(ThreadDpVectors, ItemsPerBlockX),
+            __NV_STD_MIN(ItemsPerThread, ItemsPerBlockX),
             ItemsPerVector>
         ldg_vector_t;
 

@@ -37,15 +37,7 @@ struct block_loader<
 
     enum
     {
-        /// Number of ldg_vector_t within each thread-tile
-        ThreadLdgVectors = divide_assert<VectorsPerBlock, ThreadsPerBlock>::value,
-
-        /// Extent of the thread tile in ldg_vector_t along K-axis
-        ThreadLdgVectorsK = __NV_STD_MAX(1, (VectorsPerBlockK / ThreadsPerBlock)),
-
-        /// Extent of the thread tile in ldg_vector_t along L-axis
-        ThreadLdgVectorsL = divide_assert<ThreadLdgVectors, ThreadLdgVectorsK>::value,
-
+        VectorsPerThread = VectorsPerBlock / ThreadsPerBlock,
 
 
         /// Number of ldg_vector_t within each stripmine-tile
@@ -65,15 +57,6 @@ struct block_loader<
 
     /// Predicate bit vector
     typedef uint64_t predicate_mask_t;
-
-
-    //-------------------------------------------------------------------------
-    // Assert assumptions
-    //-------------------------------------------------------------------------
-
-    static_assert(
-        (ThreadLdgVectors <= sizeof(predicate_mask_t) * 8),
-        "Predicate mask type does not contain enough bits for encoding load predicates");
 
 
     //-------------------------------------------------------------------------
@@ -108,7 +91,7 @@ struct block_loader<
     int2 block_thread_ldgvec_coords;
 
     /// Thread-wide tile of prefetch data
-    ldg_vector_t thread_tile[ThreadLdgVectorsK][ThreadLdgVectorsL];
+    ldg_vector_t thread_tile[1][VectorsPerThread];
 
 
     //-------------------------------------------------------------------------
@@ -174,19 +157,13 @@ struct block_loader<
     inline __device__
     void request()
     {
-        // Outer thread-tile ldg_vector_t iteration (K-axis)
+        // Inner thread-tile ldg_vector_t iteration (L-axis)
         #pragma unroll
-        for (int thread_ldgvec_k = 0; thread_ldgvec_k < ThreadLdgVectorsK; ++thread_ldgvec_k)
+        for (int thread_ldgvec_l = 0; thread_ldgvec_l < VectorsPerThread; ++thread_ldgvec_l)
         {
-            // Inner thread-tile ldg_vector_t iteration (L-axis)
-            #pragma unroll
-            for (int thread_ldgvec_l = 0; thread_ldgvec_l < ThreadLdgVectorsL; ++thread_ldgvec_l)
-            {
-                thread_tile[thread_ldgvec_k][thread_ldgvec_l].load(
-                    d_matrix_ldgvecs +
-                    (thread_ldgvec_k * StripmineLdgVectorsK * matrix_ldgvec_stride_k) +
-                    (thread_ldgvec_l * StripmineLdgVectorsL * matrix_ldgvec_stride_l));
-            }
+            thread_tile[0][thread_ldgvec_l].load(
+                d_matrix_ldgvecs +
+                (thread_ldgvec_l * StripmineLdgVectorsL * matrix_ldgvec_stride_l));
         }
         d_matrix_ldgvecs += (matrix_ldgvec_stride_k * VectorsPerBlockK);
     }
@@ -204,27 +181,16 @@ struct block_loader<
     void commit(
         float (&scratch_tile)[ItemsPerBlockK][SmemDpVectorsL])
     {
-        static_assert(SmemDpVectorsL >= ItemsPerBlockX, "Row stride must be >= tile width.");
-
-        // Outer thread-tile ldg_vector_t iteration (K-axis)
+        int block_ldgvec_k = block_thread_ldgvec_coords.y;
         #pragma unroll
-        for (int thread_ldgvec_k = 0; thread_ldgvec_k < ThreadLdgVectorsK; ++thread_ldgvec_k)
+        for (int thread_ldgvec_l = 0; thread_ldgvec_l < VectorsPerThread; ++thread_ldgvec_l)
         {
-            int block_ldgvec_k = block_thread_ldgvec_coords.y + (thread_ldgvec_k * StripmineLdgVectorsK);
-
-            // Inner thread-tile ldg_vector_t iteration (L-axis)
+            int block_ldgvec_l = block_thread_ldgvec_coords.x + (thread_ldgvec_l * StripmineLdgVectorsL);
             #pragma unroll
-            for (int thread_ldgvec_l = 0; thread_ldgvec_l < ThreadLdgVectorsL; ++thread_ldgvec_l)
+            for (int dpvec = 0; dpvec < ItemsPerVectorX; ++dpvec)
             {
-                int block_ldgvec_l = block_thread_ldgvec_coords.x + (thread_ldgvec_l * StripmineLdgVectorsL);
-
-                // Write column of float
-                #pragma unroll
-                for (int dpvec = 0; dpvec < ItemsPerVectorX; ++dpvec)
-                {
-                    scratch_tile[(block_ldgvec_k * ItemsPerVectorX) + dpvec][block_ldgvec_l] =
-                        thread_tile[thread_ldgvec_k][thread_ldgvec_l].buff[dpvec];
-                }
+                scratch_tile[(block_ldgvec_k * ItemsPerVectorX) + dpvec][block_ldgvec_l] =
+                    thread_tile[0][thread_ldgvec_l].buff[dpvec];
             }
         }
     }
