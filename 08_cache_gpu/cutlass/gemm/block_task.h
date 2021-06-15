@@ -95,7 +95,7 @@ namespace cutlass {
 
       inline __device__ void request_local_prefetch(lds_vector_a_t (&slice_a)[VectorsPerThreadY],
 						    lds_vector_b_t (&slice_b)[VectorsPerThreadX],
-						    int tile_offset_k)
+						    int offset_k)
       {
 	int warp_id = threadIdx.x / ThreadsPerWarp;
 	int warp_x = warp_id % WarpsPerBlockX;
@@ -106,10 +106,10 @@ namespace cutlass {
 	offset_y = lane_y * ItemsPerVectorY + warp_y * ItemsPerWarpY;
 	offset_x = lane_x * ItemsPerVectorX + warp_x * ItemsPerWarpX;
 	for (int i = 0; i < VectorsPerThreadX; ++i) {
-	  slice_b[i].load(&scratch->block_b[tile_offset_k][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
+	  slice_b[i].load(&scratch->block_b[offset_k][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
 	}
 	for (int i = 0; i < VectorsPerThreadY; ++i) {
-	  slice_a[i].load(&scratch->block_a[tile_offset_k][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
+	  slice_a[i].load(&scratch->block_a[offset_k][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
 	}
       }
 
@@ -130,37 +130,37 @@ namespace cutlass {
 #pragma unroll 1
 	  while (block_item_coords_k < dim_k) {
 #pragma unroll
-	    for (int tile_offset_k = 0; tile_offset_k < ItemsPerBlockK; tile_offset_k += 1) {
-	      if ((tile_offset_k == ItemsPerBlockK - 1)) {
+	    for (int offset_k = 0; offset_k < ItemsPerBlockK; offset_k += 1) {
+	      if ((offset_k == ItemsPerBlockK - 1)) {
 		__syncthreads();
 		loader_a.commit(scratch->block_a);
 		loader_b.commit(scratch->block_b);
 		__syncthreads();
 	      }
-	      request_local_prefetch(local_slices_a[(tile_offset_k + 1) % 2],
-				     local_slices_b[(tile_offset_k + 1) % 2],
-				     (tile_offset_k + 1) % ItemsPerBlockK);
-	      if ((tile_offset_k == 0)) {
+	      request_local_prefetch(local_slices_a[(offset_k + 1) % 2],
+				     local_slices_b[(offset_k + 1) % 2],
+				     (offset_k + 1) % ItemsPerBlockK);
+	      if ((offset_k == 0)) {
 		loader_b.request();
 		loader_a.request();
 	      }
 	      typedef float thread_tile_a_t[VectorsPerThreadY * ItemsPerVectorY];
 	      typedef float thread_tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
-	      thread_tile_a_t &thread_tile_a = reinterpret_cast<thread_tile_a_t&>(local_slices_a[(tile_offset_k) % 2]);
-	      thread_tile_b_t &thread_tile_b = reinterpret_cast<thread_tile_b_t&>(local_slices_b[(tile_offset_k) % 2]);
+	      thread_tile_a_t &thread_tile_a = reinterpret_cast<thread_tile_a_t&>(local_slices_a[(offset_k) % 2]);
+	      thread_tile_b_t &thread_tile_b = reinterpret_cast<thread_tile_b_t&>(local_slices_b[(offset_k) % 2]);
 	      accumulator.multiply_accumulate(thread_tile_a, thread_tile_b);
 	    }
 	    block_item_coords_k += ItemsPerBlockK;
 	  }
 #pragma unroll
-	  for (int tile_offset_k = 0; tile_offset_k < ItemsPerBlockK; tile_offset_k += 1) {
-	    request_local_prefetch(local_slices_a[(tile_offset_k + 1) % 2],
-				   local_slices_b[(tile_offset_k + 1) % 2],
-				   (tile_offset_k + 1) % ItemsPerBlockK);
+	  for (int offset_k = 0; offset_k < ItemsPerBlockK; offset_k += 1) {
+	    request_local_prefetch(local_slices_a[(offset_k + 1) % 2],
+				   local_slices_b[(offset_k + 1) % 2],
+				   (offset_k + 1) % ItemsPerBlockK);
 	    typedef float thread_tile_a_t[VectorsPerThreadY * ItemsPerVectorY];
 	    typedef float thread_tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
-	    thread_tile_a_t &thread_tile_a = reinterpret_cast<thread_tile_a_t&>(local_slices_a[(tile_offset_k) % 2]);
-	    thread_tile_b_t &thread_tile_b = reinterpret_cast<thread_tile_b_t&>(local_slices_b[(tile_offset_k) % 2]);
+	    thread_tile_a_t &thread_tile_a = reinterpret_cast<thread_tile_a_t&>(local_slices_a[(offset_k) % 2]);
+	    thread_tile_b_t &thread_tile_b = reinterpret_cast<thread_tile_b_t&>(local_slices_b[(offset_k) % 2]);
 	    accumulator.multiply_accumulate(thread_tile_a, thread_tile_b);
 	  }
 	  float alpha = 1.0;
