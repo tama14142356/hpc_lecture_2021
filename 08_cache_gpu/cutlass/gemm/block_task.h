@@ -144,11 +144,11 @@ namespace cutlass {
 		loader_b.request();
 		loader_a.request();
 	      }
-	      typedef float thread_tile_a_t[VectorsPerThreadY * ItemsPerVectorY];
-	      typedef float thread_tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
-	      thread_tile_a_t &thread_tile_a = reinterpret_cast<thread_tile_a_t&>(local_slices_a[(offset_k) % 2]);
-	      thread_tile_b_t &thread_tile_b = reinterpret_cast<thread_tile_b_t&>(local_slices_b[(offset_k) % 2]);
-	      accumulator.multiply_accumulate(thread_tile_a, thread_tile_b);
+	      typedef float tile_a_t[VectorsPerThreadY * ItemsPerVectorY];
+	      typedef float tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
+	      tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(local_slices_a[(offset_k) % 2]);
+	      tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(local_slices_b[(offset_k) % 2]);
+	      accumulator.multiply_accumulate(tile_a, tile_b);
 	    }
 	    block_item_coords_k += ItemsPerBlockK;
 	  }
@@ -157,11 +157,11 @@ namespace cutlass {
 	    request_local_prefetch(local_slices_a[(offset_k + 1) % 2],
 				   local_slices_b[(offset_k + 1) % 2],
 				   (offset_k + 1) % ItemsPerBlockK);
-	    typedef float thread_tile_a_t[VectorsPerThreadY * ItemsPerVectorY];
-	    typedef float thread_tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
-	    thread_tile_a_t &thread_tile_a = reinterpret_cast<thread_tile_a_t&>(local_slices_a[(offset_k) % 2]);
-	    thread_tile_b_t &thread_tile_b = reinterpret_cast<thread_tile_b_t&>(local_slices_b[(offset_k) % 2]);
-	    accumulator.multiply_accumulate(thread_tile_a, thread_tile_b);
+	    typedef float tile_a_t[VectorsPerThreadY * ItemsPerVectorY];
+	    typedef float tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
+	    tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(local_slices_a[(offset_k) % 2]);
+	    tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(local_slices_b[(offset_k) % 2]);
+	    accumulator.multiply_accumulate(tile_a, tile_b);
 	  }
 	  float alpha = 1.0;
 	  float beta = 0.0;
@@ -171,17 +171,17 @@ namespace cutlass {
 	    for (int iy = 0; iy < ItemsPerThreadY; iy += ItemsPerVectorY) {
 	      int vx = ix / ItemsPerVectorX;
 	      int vy = iy / ItemsPerVectorY;
-	      int thread_item_coords_tile_x = offset_x + (vx * ThreadsPerWarpX * ItemsPerVectorX) + (ix % ItemsPerVectorX);
-	      int thread_item_coords_tile_y = offset_y + (vy * ThreadsPerWarpY * ItemsPerVectorY) + (iy % ItemsPerVectorY);
-	      int c_idx = (grid_raster.block_item_coords.x + thread_item_coords_tile_x) * dim_m +
-		grid_raster.block_item_coords.y + thread_item_coords_tile_y;
+	      int tx = offset_x + (vx * ThreadsPerWarpX * ItemsPerVectorX) + (ix % ItemsPerVectorX);
+	      int ty = offset_y + (vy * ThreadsPerWarpY * ItemsPerVectorY) + (iy % ItemsPerVectorY);
+	      int c_idx = (grid_raster.block_item_coords.x + tx) * dim_m +
+		grid_raster.block_item_coords.y + ty;
 	      float *my_c = d_c + c_idx;
 #pragma unroll
 	      for (int i = 0; i < ItemsPerVectorY; ++i) {
 		float c_slice = float(0);
 		float *c_ptr = my_c + i;
-		if ((grid_raster.block_item_coords.x + thread_item_coords_tile_x) < dim_n &&
-		    (grid_raster.block_item_coords.y + thread_item_coords_tile_y + i) < dim_m) {
+		if ((grid_raster.block_item_coords.x + tx) < dim_n &&
+		    (grid_raster.block_item_coords.y + ty + i) < dim_m) {
 		  c_slice = alpha * accumulator.get(ix, iy + i) + beta * c_slice;
 		  stg_cg(c_ptr, c_slice);
 		}
