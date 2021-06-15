@@ -2,7 +2,6 @@
 
 #include <stdint.h>
 #include "io_intrinsics.h"
-#include "nv_std.h"
 #include "block_loader_crosswise.h"
 #include "block_loader_congruous.h"
 
