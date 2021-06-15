@@ -6,11 +6,8 @@
 #define DEBUG
 
 #include <gemm/dispatch.h>
-#include <gemm/epilogue_function.h>
 #include "util/matrix.h"
 #include "util/timer.h"
-
-//using namespace cutlass;
 
 int main(int argc, const char **argv) {
   int m = 10240;

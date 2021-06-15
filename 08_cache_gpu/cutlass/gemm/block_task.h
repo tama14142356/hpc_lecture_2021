@@ -1,12 +1,9 @@
 #pragma once
 
 #include <stdint.h>
-
 #include "../util/util.h"
-
 #include "block_loader_crosswise.h"
 #include "block_loader_congruous.h"
-#include "thread_accumulator.h"
 
 namespace cutlass {
   namespace gemm {
@@ -41,7 +38,6 @@ namespace cutlass {
 	ThreadsPerBlockL = ThreadsPerBlock / VectorsPerBlockK // 32
       };
 
-      typedef thread_accumulator<ItemsPerThreadY,ItemsPerThreadX> thread_accumulator_t;
       typedef io_vector<float, ItemsPerVectorY> lds_vector_a_t;
       typedef io_vector<float, ItemsPerVectorX> lds_vector_b_t;
 
@@ -61,7 +57,28 @@ namespace cutlass {
       lds_vector_b_t local_slices_b[2][VectorsPerThreadX];
       block_loader_a_t loader_a;
       block_loader_b_t loader_b;
-      thread_accumulator_t accumulator;
+      float accumulators[ItemsPerThreadY][ItemsPerThreadX];
+
+      inline __device__
+	static void mad(float &d,
+			const float &a,
+			const float &b,
+			const float &c) {
+	  asm volatile ( "fma.rn.f32 %0, %1, %2, %3;\n"
+			 : "=f"(d) : "f"(a), "f"(b), "f"(c));
+	}
+
+      inline __device__
+	void mad_xy(float (&tile_a)[ItemsPerThreadY],
+		    float (&tile_b)[ItemsPerThreadX],
+		    int x,
+		    int y) {
+	  mad(
+	      accumulators[y][x],
+	      tile_a[y],
+	      tile_b[x],
+	      accumulators[y][x]);
+	}
 
       inline __device__
 	block_task(
@@ -78,9 +95,7 @@ namespace cutlass {
 	  dim_n(dim_n),
 	  dim_k(dim_k),
 	  loader_a(d_a, dim_m, ItemsPerBlockY * blockIdx.x),
-	  loader_b(d_b, dim_k, ItemsPerBlockX * blockIdx.y),
-	  accumulator()
-	  {}
+	  loader_b(d_b, dim_k, ItemsPerBlockX * blockIdx.y) {}
 
       inline __device__ void request_local_prefetch(lds_vector_a_t (&slice_a)[VectorsPerThreadY],
 						    lds_vector_b_t (&slice_b)[VectorsPerThreadX],
@@ -112,7 +127,14 @@ namespace cutlass {
 	  loader_b.commit(scratch->block_b);
 	  block_item_coords_k += ItemsPerBlockK;
 	  __syncthreads();
-	  accumulator.init();
+#pragma unroll
+	  for (int y = 0; y < ItemsPerThreadY; ++y) {
+#pragma unroll
+	    for (int x = 0; x < ItemsPerThreadX; ++x)
+	    {
+	      accumulators[y][x] = float(0);
+	    }
+	  }
 	  request_local_prefetch(local_slices_a[0],
 				 local_slices_b[0],
 				 0);
@@ -137,7 +159,13 @@ namespace cutlass {
 	      typedef float tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
 	      tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(local_slices_a[(offset_k) % 2]);
 	      tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(local_slices_b[(offset_k) % 2]);
-	      accumulator.multiply_accumulate(tile_a, tile_b);
+#pragma unroll
+	      for (int y = 0; y < ItemsPerThreadY; ++y) {
+#pragma unroll
+		for (int x = 0; x < ItemsPerThreadX; ++x) {
+		  mad_xy(tile_a, tile_b, x, y);
+		}
+	      }
 	    }
 	    block_item_coords_k += ItemsPerBlockK;
 	  }
@@ -150,7 +178,13 @@ namespace cutlass {
 	    typedef float tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
 	    tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(local_slices_a[(offset_k) % 2]);
 	    tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(local_slices_b[(offset_k) % 2]);
-	    accumulator.multiply_accumulate(tile_a, tile_b);
+#pragma unroll
+	    for (int y = 0; y < ItemsPerThreadY; ++y) {
+#pragma unroll
+	      for (int x = 0; x < ItemsPerThreadX; ++x) {
+		mad_xy(tile_a, tile_b, x, y);
+	      }
+	    }
 	  }
 	  float alpha = 1.0;
 	  float beta = 0.0;
@@ -169,7 +203,7 @@ namespace cutlass {
 	        int c_idx = bx * dim_m + by + i;
 		float c_slice = float(0);
 		if (bx < dim_n && (by + i) < dim_m) {
-		  c_slice = alpha * accumulator.get(ix, iy + i) + beta * c_slice;
+		  c_slice = alpha * accumulators[iy + i][ix] + beta * c_slice;
 		  stg_cg(d_c + c_idx, c_slice);
 		}
 	      }
