@@ -51,22 +51,11 @@ struct io_vector <
 };
 
 inline __device__
-void stg_cg_internal(float *ptr,
-		     const float (&src)[1]) {
+void stg_cg(float *ptr, const float &src) {
   asm volatile ("st.global.cg.f32 [%0], %1;\n"
 		: :
 		"l"(ptr),
-		"f"(src[0]));
-}
-
-
-struct io_cast {
-    typedef float type[1];
-};
-
-inline __device__
-void stg_cg(float *dest, const float &src) {
-  stg_cg_internal(dest, reinterpret_cast<const typename io_cast::type &>(src));
+		"f"(src));
 }
 
 } // namespace cutlass
