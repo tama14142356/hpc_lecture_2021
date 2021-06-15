@@ -41,7 +41,7 @@ namespace cutlass {
 	ThreadsPerBlockL = ThreadsPerBlock / VectorsPerBlockK // 32
       };
 
-      typedef thread_accumulator<ItemsPerThreadY,ItemsPerThreadX,float,float> thread_accumulator_t;
+      typedef thread_accumulator<ItemsPerThreadY,ItemsPerThreadX> thread_accumulator_t;
       typedef io_vector<float, ItemsPerVectorY> lds_vector_a_t;
       typedef io_vector<float, ItemsPerVectorX> lds_vector_b_t;
 
@@ -163,18 +163,15 @@ namespace cutlass {
 	      int vy = iy / ItemsPerVectorY;
 	      int tx = offset_x + (vx * ThreadsPerWarpX * ItemsPerVectorX) + (ix % ItemsPerVectorX);
 	      int ty = offset_y + (vy * ThreadsPerWarpY * ItemsPerVectorY) + (iy % ItemsPerVectorY);
-	      int bx = ItemsPerBlockX * blockIdx.y;
-	      int by = ItemsPerBlockY * blockIdx.x;
-	      int c_idx = (bx + tx) * dim_m + by + ty;
-	      float *my_c = d_c + c_idx;
+	      int bx = ItemsPerBlockX * blockIdx.y + tx;
+	      int by = ItemsPerBlockY * blockIdx.x + ty;
 #pragma unroll
 	      for (int i = 0; i < ItemsPerVectorY; ++i) {
+	        int c_idx = bx * dim_m + by + i;
 		float c_slice = float(0);
-		float *c_ptr = my_c + i;
-		if ((bx + tx) < dim_n &&
-		    (by + ty + i) < dim_m) {
+		if (bx < dim_n && (by + i) < dim_m) {
 		  c_slice = alpha * accumulator.get(ix, iy + i) + beta * c_slice;
-		  stg_cg(c_ptr, c_slice);
+		  stg_cg(d_c + c_idx, c_slice);
 		}
 	      }
 	    }
