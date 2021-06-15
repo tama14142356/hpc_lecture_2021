@@ -39,21 +39,20 @@ int main(int argc, const char **argv) {
   gpu_timer timer;
   for (int i = 0; i < g_timing_iterations+2; i++) {
     if (i == 2) timer.start();
-    CUDA_PERROR(cublasSgemm(
-                            g_cublas_handle,
-			    CUBLAS_OP_N,
-			    CUBLAS_OP_N,
-                            m,
-                            n,
-                            k,
-                            &alpha,
-                            A,
-                            m,
-                            B,
-                            k,
-                            &beta,
-                            C,
-                            m));
+    cublasSgemm(g_cublas_handle,
+		CUBLAS_OP_N,
+		CUBLAS_OP_N,
+		m,
+		n,
+		k,
+		&alpha,
+		A,
+		m,
+		B,
+		k,
+		&beta,
+		C,
+		m);
   }
   timer.stop();
   int64_t num_flops = (2 * int64_t(m) * int64_t(n) * int64_t(k)) + (2 * int64_t(m) * int64_t(n));

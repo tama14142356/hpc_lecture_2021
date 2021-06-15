@@ -34,8 +34,6 @@
 
 #include <cuda_runtime.h>
 
-#include <util/debug.h>
-
 namespace cutlass {
 
 
@@ -53,31 +51,31 @@ struct gpu_timer
 
     gpu_timer()
     {
-        CUDA_PERROR_EXIT(cudaEventCreate(&_start));
-        CUDA_PERROR_EXIT(cudaEventCreate(&_stop));
+        cudaEventCreate(&_start);
+        cudaEventCreate(&_stop);
     }
 
     ~gpu_timer()
     {
-        CUDA_PERROR_EXIT(cudaEventDestroy(_start));
-        CUDA_PERROR_EXIT(cudaEventDestroy(_stop));
+        cudaEventDestroy(_start);
+        cudaEventDestroy(_stop);
     }
 
     void start()
     {
-        CUDA_PERROR_EXIT(cudaEventRecord(_start, 0));
+        cudaEventRecord(_start, 0);
     }
 
     void stop()
     {
-        CUDA_PERROR_EXIT(cudaEventRecord(_stop, 0));
+        cudaEventRecord(_stop, 0);
     }
 
     float elapsed_millis()
     {
         float elapsed = 0.0;
-        CUDA_PERROR_EXIT(cudaEventSynchronize(_stop));
-        CUDA_PERROR_EXIT(cudaEventElapsedTime(&elapsed, _start, _stop));
+        cudaEventSynchronize(_stop);
+        cudaEventElapsedTime(&elapsed, _start, _stop);
         return elapsed;
     }
 };
