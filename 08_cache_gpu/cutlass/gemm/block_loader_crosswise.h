@@ -4,8 +4,7 @@
 namespace cutlass {
 namespace gemm {
 
-template<>
-struct block_loader<load_algorithm::CrosswiseCopy> {
+struct block_loader_b_t {
     enum
     {
         ItemsPerVectorY = 4,
@@ -40,18 +39,11 @@ struct block_loader<load_algorithm::CrosswiseCopy> {
             ItemsPerVector>
         ldg_vector_t;
 
-    /// Input pointer to matrix in ldg_vector_t
     ldg_vector_t *d_matrix_ldgvecs;
-
-    /// Distance in ldg_vector_t within pitched-linear memory between successive coordinates along the K-axis
     int stride_k;
-
-    /// Distance in ldg_vector_t within pitched-linear memory between successive coordinates along the L-axis
     int stride_l;
-
-    /// ldg_vector_t coordinates (l, k) of thread-tile within the block-wide tile
-    int2 block_thread_ldgvec_coords;
-
+    int vector_k;
+    int vector_l;
     /// Thread-wide tile of prefetch data
     ldg_vector_t thread_tile[1][VectorsPerThreadX];
 
@@ -62,7 +54,7 @@ struct block_loader<load_algorithm::CrosswiseCopy> {
 
     /// Constructor
     inline __device__
-    block_loader(
+    block_loader_b_t(
         float *d_matrix_items,        ///< Input pointer to matrix in float
         int matrix_items_l,             ///< Extent of the input matrix in float along the L-axis
         int matrix_items_stride_k,      ///< Distance in float within pitched-linear memory between successive coordinates along the K-axis
@@ -72,27 +64,16 @@ struct block_loader<load_algorithm::CrosswiseCopy> {
     {
         stride_k = matrix_items_stride_k;
         stride_l = (matrix_items_stride_l / ItemsPerVectorX);
-
-        // ldg_vector_t coordinates (l, k) of thread-tile within the block-wide tile
-        block_thread_ldgvec_coords = make_int2(
-            (threadIdx.x / VectorsPerBlockK),                // l-coordinate
-            (threadIdx.x % VectorsPerBlockK));               // k-coordinate
-
-        // ldg_vector_t coordinates (l, k) of first block-wide tile within the input matrix
-        int2 matrix_block_ldgvec_coords = make_int2(
-            matrix_block_item_coords,                     // l-coordinate
-            0);    // k-coordinate
-
-        // ldg_vector_t coordinates (l, k) of first thread-tile tile within the input matrix
-        int2 matrix_thread_ldgvec_coords = make_int2(
-            block_thread_ldgvec_coords.x + matrix_block_ldgvec_coords.x,
-            block_thread_ldgvec_coords.y + matrix_block_ldgvec_coords.y);
+	vector_k = threadIdx.x % VectorsPerBlockK;
+	vector_l = threadIdx.x / VectorsPerBlockK;
+	int tile_k = vector_k;
+	int tile_l = vector_l + matrix_block_item_coords;
 
         // Update the input pointer to be matrix_thread_ldgvec_coords
         this->d_matrix_ldgvecs =
             reinterpret_cast<ldg_vector_t*>(d_matrix_items) +
-            (matrix_thread_ldgvec_coords.y * stride_k) +
-            (matrix_thread_ldgvec_coords.x * stride_l);
+            (tile_k * stride_k) +
+            (tile_l * stride_l);
     }
 
 
@@ -130,11 +111,11 @@ struct block_loader<load_algorithm::CrosswiseCopy> {
     void commit(
         float (&scratch_tile)[ItemsPerBlockK][SmemDpVectorsL])
     {
-        int block_ldgvec_k = block_thread_ldgvec_coords.y;
+        int block_ldgvec_k = vector_k;
         #pragma unroll
         for (int thread_ldgvec_l = 0; thread_ldgvec_l < VectorsPerThreadX; ++thread_ldgvec_l)
         {
-            int block_ldgvec_l = block_thread_ldgvec_coords.x + (thread_ldgvec_l * ThreadsPerBlockL);
+            int block_ldgvec_l = vector_l + (thread_ldgvec_l * ThreadsPerBlockL);
             #pragma unroll
             for (int dpvec = 0; dpvec < ItemsPerVectorX; ++dpvec)
             {

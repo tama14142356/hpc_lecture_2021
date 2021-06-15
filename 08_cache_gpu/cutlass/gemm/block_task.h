@@ -5,7 +5,8 @@
 #include "../util/util.h"
 
 #include "grid_raster.h"
-#include "block_loader.h"
+#include "block_loader_crosswise.h"
+#include "block_loader_congruous.h"
 #include "thread_accumulator.h"
 
 namespace cutlass {
@@ -56,11 +57,6 @@ struct block_task
       matrix_transform_t::NonTranspose,
       grid_raster_strategy::Default>
     grid_raster_t;
-
-
-    typedef block_loader<load_algorithm::CongruousCopy> block_loader_a_t;
-
-    typedef block_loader<load_algorithm::CrosswiseCopy> block_loader_b_t;
 
     /// Shared memory layout for scratch storage
     struct scratch_storage_t
