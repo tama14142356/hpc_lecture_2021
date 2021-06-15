@@ -50,9 +50,8 @@ struct io_vector <
     }
 };
 
-template <typename ptr_t>
 inline __device__
-void stg_cg_internal(ptr_t ptr,
+void stg_cg_internal(float *ptr,
 		     const float (&src)[1]) {
   asm volatile ("st.global.cg.f32 [%0], %1;\n"
 		: :
