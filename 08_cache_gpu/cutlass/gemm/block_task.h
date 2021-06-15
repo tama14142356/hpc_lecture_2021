@@ -66,8 +66,8 @@ namespace cutlass {
       int dim_n;
       int dim_k;
       grid_raster_t grid_raster;
-      int thread_strip_offset_a;
-      int thread_strip_offset_b;
+      int offset_y;
+      int offset_x;
       lds_vector_a_t local_slices_a[2][VectorsPerThreadY];
       lds_vector_b_t local_slices_b[2][VectorsPerThreadX];
       block_loader_a_t loader_a;
@@ -82,31 +82,19 @@ namespace cutlass {
 		   float *d_c,
 		   int dim_m,
 		   int dim_n,
-		   int dim_k)
-	:
+		   int dim_k) :
 	  scratch(scratch),
 	  d_c(d_c),
 	  dim_m(dim_m),
 	  dim_n(dim_n),
 	  dim_k(dim_k),
-
-	  loader_a(
-		   d_a,
-		   dim_m,
-		   ItemsPerBlockY * blockIdx.x),
-
-	  loader_b(
-		   d_b,
-		   dim_k,
-		   ItemsPerBlockX * blockIdx.y),
-
+	  loader_a(d_a, dim_m, ItemsPerBlockY * blockIdx.x),
+	  loader_b(d_b, dim_k, ItemsPerBlockX * blockIdx.y),
 	  accumulator(scratch->accum_scratch)
 	  {}
 
-
-      inline __device__ void request_local_prefetch(
-						    lds_vector_a_t (&slice_a)[VectorsPerThreadY],  ///< Slice from A
-						    lds_vector_b_t (&slice_b)[VectorsPerThreadX],  ///< Slice from B
+      inline __device__ void request_local_prefetch(lds_vector_a_t (&slice_a)[VectorsPerThreadY],
+						    lds_vector_b_t (&slice_b)[VectorsPerThreadX],
 						    int tile_offset_k)
       {
 	int warp_id = threadIdx.x / ThreadsPerWarp;
@@ -115,182 +103,91 @@ namespace cutlass {
 	int lane_id = threadIdx.x % ThreadsPerWarp;
 	int lane_x = lane_id / ThreadsPerWarpY;
 	int lane_y = lane_id % ThreadsPerWarpY;
-	thread_strip_offset_a = lane_y * ItemsPerVectorY + warp_y * ItemsPerWarpY;
-	thread_strip_offset_b = lane_x * ItemsPerVectorX + warp_x * ItemsPerWarpX;
-	// Load B strip
-	for (int i = 0; i < VectorsPerThreadX; ++i)
-	{
-	  slice_b[i].load(
-			  &scratch->block_b[tile_offset_k][thread_strip_offset_b + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
+	offset_y = lane_y * ItemsPerVectorY + warp_y * ItemsPerWarpY;
+	offset_x = lane_x * ItemsPerVectorX + warp_x * ItemsPerWarpX;
+	for (int i = 0; i < VectorsPerThreadX; ++i) {
+	  slice_b[i].load(&scratch->block_b[tile_offset_k][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
 	}
-
-	// Load A strip
-	for (int i = 0; i < VectorsPerThreadY; ++i)
-	{
-	  slice_a[i].load(
-			  &scratch->block_a[tile_offset_k][thread_strip_offset_a + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
+	for (int i = 0; i < VectorsPerThreadY; ++i) {
+	  slice_a[i].load(&scratch->block_a[tile_offset_k][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
 	}
       }
 
-
-      //-------------------------------------------------------------------------
-      // Epilogue
-      //-------------------------------------------------------------------------
-
-      /**
-       * Performs the GEMM epilogue:
-       *   - Applies the scalar multipliers and addends to the accumulators
-       *   - Write the result to the output matrix
-       */
       __forceinline__ __device__
-	void epilogue()
+	void run()
 	{
+	  int block_item_coords_k = 0;
+	  loader_a.request();
+	  loader_b.request();
+	  loader_a.commit(scratch->block_a);
+	  loader_b.commit(scratch->block_b);
+	  block_item_coords_k += ItemsPerBlockK;
+	  __syncthreads();
+	  accumulator.init();
+	  request_local_prefetch(local_slices_a[0],
+				 local_slices_b[0],
+				 0);
+#pragma unroll 1
+	  while (block_item_coords_k < dim_k) {
+#pragma unroll
+	    for (int tile_offset_k = 0; tile_offset_k < ItemsPerBlockK; tile_offset_k += 1) {
+	      if ((tile_offset_k == ItemsPerBlockK - 1)) {
+		__syncthreads();
+		loader_a.commit(scratch->block_a);
+		loader_b.commit(scratch->block_b);
+		__syncthreads();
+	      }
+	      request_local_prefetch(local_slices_a[(tile_offset_k + 1) % 2],
+				     local_slices_b[(tile_offset_k + 1) % 2],
+				     (tile_offset_k + 1) % ItemsPerBlockK);
+	      if ((tile_offset_k == 0)) {
+		loader_b.request();
+		loader_a.request();
+	      }
+	      typedef float thread_tile_a_t[VectorsPerThreadY * ItemsPerVectorY];
+	      typedef float thread_tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
+	      thread_tile_a_t &thread_tile_a = reinterpret_cast<thread_tile_a_t&>(local_slices_a[(tile_offset_k) % 2]);
+	      thread_tile_b_t &thread_tile_b = reinterpret_cast<thread_tile_b_t&>(local_slices_b[(tile_offset_k) % 2]);
+	      accumulator.multiply_accumulate(thread_tile_a, thread_tile_b);
+	    }
+	    block_item_coords_k += ItemsPerBlockK;
+	  }
+#pragma unroll
+	  for (int tile_offset_k = 0; tile_offset_k < ItemsPerBlockK; tile_offset_k += 1) {
+	    request_local_prefetch(local_slices_a[(tile_offset_k + 1) % 2],
+				   local_slices_b[(tile_offset_k + 1) % 2],
+				   (tile_offset_k + 1) % ItemsPerBlockK);
+	    typedef float thread_tile_a_t[VectorsPerThreadY * ItemsPerVectorY];
+	    typedef float thread_tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
+	    thread_tile_a_t &thread_tile_a = reinterpret_cast<thread_tile_a_t&>(local_slices_a[(tile_offset_k) % 2]);
+	    thread_tile_b_t &thread_tile_b = reinterpret_cast<thread_tile_b_t&>(local_slices_b[(tile_offset_k) % 2]);
+	    accumulator.multiply_accumulate(thread_tile_a, thread_tile_b);
+	  }
 	  float alpha = 1.0;
 	  float beta = 0.0;
 #pragma unroll
-	  for (int x = 0; x < ItemsPerThreadX; ++x)
-	  {
+	  for (int ix = 0; ix < ItemsPerThreadX; ++ix) {
 #pragma unroll
-	    for (int y = 0; y < ItemsPerThreadY; y += ItemsPerVectorY)
-	    {
-	      int thread_strip_b = x / ItemsPerVectorX;
-	      int thread_strip_a = y / ItemsPerVectorY;
-
-	      int thread_item_coords_tile_x = thread_strip_offset_b + (thread_strip_b * ThreadsPerWarpX * ItemsPerVectorX) + (x % ItemsPerVectorX);
-	      int thread_item_coords_tile_y = thread_strip_offset_a + (thread_strip_a * ThreadsPerWarpY * ItemsPerVectorY) + (y % ItemsPerVectorY);
-
+	    for (int iy = 0; iy < ItemsPerThreadY; iy += ItemsPerVectorY) {
+	      int vx = ix / ItemsPerVectorX;
+	      int vy = iy / ItemsPerVectorY;
+	      int thread_item_coords_tile_x = offset_x + (vx * ThreadsPerWarpX * ItemsPerVectorX) + (ix % ItemsPerVectorX);
+	      int thread_item_coords_tile_y = offset_y + (vy * ThreadsPerWarpY * ItemsPerVectorY) + (iy % ItemsPerVectorY);
 	      int c_idx = (grid_raster.block_item_coords.x + thread_item_coords_tile_x) * dim_m +
 		grid_raster.block_item_coords.y + thread_item_coords_tile_y;
-
 	      float *my_c = d_c + c_idx;
-
 #pragma unroll
-	      for (int i = 0; i < ItemsPerVectorY; ++i)
-	      {
+	      for (int i = 0; i < ItemsPerVectorY; ++i) {
 		float c_slice = float(0);
 		float *c_ptr = my_c + i;
-
 		if ((grid_raster.block_item_coords.x + thread_item_coords_tile_x) < dim_n &&
-		    (grid_raster.block_item_coords.y + thread_item_coords_tile_y + i) < dim_m)
-		{
-		  c_slice = alpha * accumulator.get(x, y + i) + beta * c_slice;
-
+		    (grid_raster.block_item_coords.y + thread_item_coords_tile_y + i) < dim_m) {
+		  c_slice = alpha * accumulator.get(ix, iy + i) + beta * c_slice;
 		  stg_cg(c_ptr, c_slice);
 		}
 	      }
 	    }
 	  }
-	}
-
-
-      //-------------------------------------------------------------------------
-      // Tile consumption
-      //-------------------------------------------------------------------------
-
-      /**
-       * Consume a tile of A and B each
-       */
-      template <bool DoGlobalPrefetch>
-	__forceinline__ __device__
-	void consume_tile()
-	{
-	  // Unroll ItemsPerBlockK iterations of outer-product accumulations
-#pragma unroll
-	  for (int tile_offset_k = 0; tile_offset_k < ItemsPerBlockK; tile_offset_k += 1)
-	  {
-	    // Last strip commits global prefetch for next tile
-	    if ((tile_offset_k == ItemsPerBlockK - 1) && DoGlobalPrefetch)
-	    {
-	      __syncthreads();
-	      // Commit global prefetch data to scratch page
-	      loader_a.commit(scratch->block_a);
-	      loader_b.commit(scratch->block_b);
-
-	      __syncthreads();
-	    }
-
-	    // Request local prefetch for next strip
-	    request_local_prefetch(
-				   local_slices_a[(tile_offset_k + 1) % 2],
-				   local_slices_b[(tile_offset_k + 1) % 2],
-				   (tile_offset_k + 1) % ItemsPerBlockK);
-
-	    // Request global prefetch for next tile on first strip
-	    if ((tile_offset_k == 0) && DoGlobalPrefetch)
-	    {
-	      loader_b.request();
-	      loader_a.request();
-	    }
-
-	    // Cast strip-mined loads to contiguous array of float
-	    typedef float thread_tile_a_t[VectorsPerThreadY * ItemsPerVectorY];
-	    typedef float thread_tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
-	    thread_tile_a_t &thread_tile_a = reinterpret_cast<thread_tile_a_t&>(local_slices_a[(tile_offset_k) % 2]);
-	    thread_tile_b_t &thread_tile_b = reinterpret_cast<thread_tile_b_t&>(local_slices_b[(tile_offset_k) % 2]);
-
-	    // Accumulate this dp-stripe product
-	    accumulator.multiply_accumulate(thread_tile_a, thread_tile_b);
-	  }
-	}
-
-
-      //-------------------------------------------------------------------------
-      // GEMM API
-      //-------------------------------------------------------------------------
-
-      /**
-       * Compute GEMM
-       */
-      __forceinline__ __device__
-	void run()
-	{
-	  int block_item_coords_k = 0;
-
-	  // Request global prefetch of first tile
-	  loader_a.request();
-	  loader_b.request();
-
-	  // Commit global prefetch of first tile to shared memory
-	  loader_a.commit(scratch->block_a);
-	  loader_b.commit(scratch->block_b);
-
-	  // Advance to next A,B tiles in K-axis
-	  block_item_coords_k += ItemsPerBlockK;
-
-	  // Synchronize shared tiles and prepared accumulator
-	  __syncthreads();
-
-	  // Initialize thread's slice of accumulators
-	  accumulator.init();
-
-	  // Request first iteration of local prefetch strips
-	  request_local_prefetch(
-				 local_slices_a[0],
-				 local_slices_b[0],
-				 0);
-
-	  //
-	  // Main loop
-	  //
-
-	  // Consume tiles in A and B along the K-axis (all but last tile)
-#pragma unroll 1
-	  while (block_item_coords_k < dim_k)
-	  {
-	    consume_tile<true>();
-
-	    // Advance to next A,B tiles in K-axis
-	    block_item_coords_k += ItemsPerBlockK;
-	  }
-
-	  // Consume last tile
-	  consume_tile<false>();
-
-	  //
-	  // Eplilogue
-	  //
-
-	  epilogue();
 	}
     };
 
