@@ -170,20 +170,14 @@ struct block_task
         thread_strip_offset_b((warp_thread_coords.x * ItemsPerVectorX) + (block_warp_coords.x * ItemsPerWarpX)),
 
         loader_a(
-            d_a,                                                            // d_matrix
-            dim_m,                                                          // matrix_values_l
+            d_a,
             dim_m,
-            1,
-            ItemsPerBlockY * blockIdx.x,
-            dim_k),                                              // block_end_item_k
+            ItemsPerBlockY * blockIdx.x),
 
         loader_b(
-            d_b,                                                            // d_matrix
-            dim_n,
-            1,
+            d_b,
             dim_k,
-            ItemsPerBlockX * blockIdx.y,
-            dim_k),                                              // block_end_item_k
+            ItemsPerBlockX * blockIdx.y),
 
         accumulator(scratch->accum_scratch)
     {}

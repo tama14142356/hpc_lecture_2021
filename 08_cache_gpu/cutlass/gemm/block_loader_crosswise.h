@@ -37,65 +37,35 @@ struct block_loader_b_t {
             float,
             ItemsPerBlockK,
             ItemsPerVector>
-        ldg_vector_t;
+        matrix_t;
 
-    ldg_vector_t *d_matrix_ldgvecs;
-    int stride_k;
+    matrix_t *d_b;
     int stride_l;
     int vector_k;
     int vector_l;
-    /// Thread-wide tile of prefetch data
-    ldg_vector_t thread_tile[1][VectorsPerThreadX];
+    matrix_t thread_tile[1][VectorsPerThreadX];
 
-
-    //-------------------------------------------------------------------------
-    // Constructor API
-    //-------------------------------------------------------------------------
-
-    /// Constructor
     inline __device__
-    block_loader_b_t(
-        float *d_matrix_items,        ///< Input pointer to matrix in float
-        int matrix_items_l,             ///< Extent of the input matrix in float along the L-axis
-        int matrix_items_stride_k,      ///< Distance in float within pitched-linear memory between successive coordinates along the K-axis
-        int matrix_items_stride_l,      ///< Distance in float within pitched-linear memory between successive coordinates along the L-axis
-        int matrix_block_item_coords,  ///< float coordinates (l, k) of first block-wide tile within the input matrix
-        int block_end_item_k)           ///< Thread block's ending coordinate (k) within the input matrix (one-past)
-    {
-        stride_k = matrix_items_stride_k;
-        stride_l = (matrix_items_stride_l / ItemsPerVectorX);
+    block_loader_b_t(float *d_b, int dim_k, int block_offset) {
+        stride_l = dim_k / ItemsPerVectorX;
 	vector_k = threadIdx.x % VectorsPerBlockK;
 	vector_l = threadIdx.x / VectorsPerBlockK;
 	int tile_k = vector_k;
-	int tile_l = vector_l + matrix_block_item_coords;
-
-        // Update the input pointer to be matrix_thread_ldgvec_coords
-        this->d_matrix_ldgvecs =
-            reinterpret_cast<ldg_vector_t*>(d_matrix_items) +
-            (tile_k * stride_k) +
-            (tile_l * stride_l);
+	int tile_l = vector_l + block_offset;
+        this->d_b = reinterpret_cast<matrix_t*>(d_b) + tile_l * stride_l + tile_k;
     }
 
-
-    //-------------------------------------------------------------------------
-    // Loader API
-    //-------------------------------------------------------------------------
-
-    /**
-     * Request the current block-wide tile
-     */
     inline __device__
-    void request()
-    {
-        // Inner thread-tile ldg_vector_t iteration (L-axis)
+    void request() {
+        // Inner thread-tile matrix_t iteration (L-axis)
         #pragma unroll
         for (int thread_ldgvec_l = 0; thread_ldgvec_l < VectorsPerThreadX; ++thread_ldgvec_l)
         {
             thread_tile[0][thread_ldgvec_l].load(
-                d_matrix_ldgvecs +
+                d_b +
                 (thread_ldgvec_l * ThreadsPerBlockL * stride_l));
         }
-        d_matrix_ldgvecs += (stride_k * VectorsPerBlockK);
+        d_b += VectorsPerBlockK;
     }
 
 
