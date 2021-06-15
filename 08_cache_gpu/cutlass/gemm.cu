@@ -6,7 +6,6 @@
 #define DEBUG
 
 #include <dispatch.h>
-#include "matrix.h"
 #include "timer.h"
 
 int main(int argc, const char **argv) {
@@ -15,8 +14,6 @@ int main(int argc, const char **argv) {
   int n = 8192;
   float alpha = 1.0;
   float beta = 0.0;
-  static const matrix_transform_t::kind_t TransformA = matrix_transform_t::NonTranspose;
-  static const matrix_transform_t::kind_t TransformB = matrix_transform_t::NonTranspose;
   typedef float value_t;
   typedef float accum_t;
   int g_timing_iterations = 10;
@@ -44,8 +41,8 @@ int main(int argc, const char **argv) {
     if (i == 2) timer.start();
     CUDA_PERROR(cublasSgemm(
                             g_cublas_handle,
-                            (cublasOperation_t) TransformA,
-                            (cublasOperation_t) TransformB,
+			    CUBLAS_OP_N,
+			    CUBLAS_OP_N,
                             m,
                             n,
                             k,
