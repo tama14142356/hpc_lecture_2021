@@ -36,13 +36,11 @@ struct io_vector <
     {
         *this = *ptr;
     }
-/*
     inline __device__
     void load(const value_t *ptr)
     {
         *this = *reinterpret_cast<const io_vector*>(ptr);
     }
-*/
     inline __device__
     void store(value_t *ptr) const
     {
