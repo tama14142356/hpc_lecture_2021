@@ -5,9 +5,9 @@
 #include <cublas_v2.h>
 #define DEBUG
 
-#include <gemm/dispatch.h>
-#include "util/matrix.h"
-#include "util/timer.h"
+#include <dispatch.h>
+#include "matrix.h"
+#include "timer.h"
 
 int main(int argc, const char **argv) {
   int m = 10240;
@@ -20,18 +20,23 @@ int main(int argc, const char **argv) {
   typedef float value_t;
   typedef float accum_t;
   int g_timing_iterations = 10;
-  matrix<value_t> A(m, k);
-  matrix<value_t> B(k, n);
-  matrix<accum_t> C(m, n);
-  matrix<accum_t> C2(m, n);
-  A.random();
-  B.random();
-  C.fill_ramp(0,0);
-  C2.fill_ramp(0,0);
-  A.sync_device();
-  B.sync_device();
-  C.sync_device();
-  C2.sync_device();
+  float *A, *B, *C, *C2;
+  cudaMallocManaged(&A, m * k * sizeof(float));
+  cudaMallocManaged(&B, k * n * sizeof(float));
+  cudaMallocManaged(&C, m * n * sizeof(float));
+  cudaMallocManaged(&C2, m * n * sizeof(float));
+  for (int i=0; i<m; i++)
+    for (int j=0; j<k; j++)
+      A[k*i+j] = drand48();
+  for (int i=0; i<k; i++)
+    for (int j=0; j<n; j++)
+      B[n*i+j] = drand48();
+  for (int i=0; i<n; i++) {
+    for (int j=0; j<m; j++) {
+      C[m*i+j] = drand48();
+      C2[m*i+j] = drand48();
+    }
+  }
   cublasHandle_t g_cublas_handle;
   cublasCreate(&g_cublas_handle);
   gpu_timer timer;
@@ -45,12 +50,12 @@ int main(int argc, const char **argv) {
                             n,
                             k,
                             &alpha,
-                            A.d_data(),
+                            A,
                             m,
-                            B.d_data(),
+                            B,
                             k,
                             &beta,
-                            C.d_data(),
+                            C,
                             m));
   }
   timer.stop();
@@ -66,22 +71,24 @@ int main(int argc, const char **argv) {
         m,
         n,
         k,
-        A.d_data(),
-        B.d_data(),
-        C2.d_data());
+        A,
+        B,
+        C2);
   }
   timer.stop();
   double tcutlass = timer.elapsed_millis() / g_timing_iterations;
   double cutlass_flops = double(num_flops) / tcutlass / 1.0e6;
   printf("CUBLAS: %.2f Gflops, CUTLASS: %.2f Gflops\n", cublas_flops, cutlass_flops);
-  C.sync_host();
-  C2.sync_host();
   double err = 0;
   for (int i=0; i<n; i++) {
     for (int j=0; j<m; j++) {
-      err += fabs(C.get(i,j) - C2.get(i,j));
+      err += fabs(C[m*i+j] - C2[m*i+j]);
     }
   }
   printf("error: %lf\n", err/n/m);
+  cudaFree(A);
+  cudaFree(B);
+  cudaFree(C);
+  cudaFree(C2);
   cublasDestroy(g_cublas_handle);
 }
