@@ -4,7 +4,6 @@
 
 #include "../util/util.h"
 
-#include "grid_raster.h"
 #include "block_loader_crosswise.h"
 #include "block_loader_congruous.h"
 #include "thread_accumulator.h"
@@ -46,14 +45,6 @@ namespace cutlass {
       typedef io_vector<float, ItemsPerVectorY> lds_vector_a_t;
       typedef io_vector<float, ItemsPerVectorX> lds_vector_b_t;
 
-      typedef grid_raster<
-	ItemsPerBlockY,
-	ItemsPerBlockX,
-	matrix_transform_t::NonTranspose,
-	matrix_transform_t::NonTranspose,
-	grid_raster_strategy::Default>
-	  grid_raster_t;
-
       struct scratch_storage_t {
 	float __align__(16) block_a[ItemsPerBlockK][ItemsPerBlockY];
 	float __align__(16) block_b[ItemsPerBlockK][ItemsPerBlockX];
@@ -65,7 +56,6 @@ namespace cutlass {
       int dim_m;
       int dim_n;
       int dim_k;
-      grid_raster_t grid_raster;
       int offset_y;
       int offset_x;
       lds_vector_a_t local_slices_a[2][VectorsPerThreadY];
@@ -173,15 +163,16 @@ namespace cutlass {
 	      int vy = iy / ItemsPerVectorY;
 	      int tx = offset_x + (vx * ThreadsPerWarpX * ItemsPerVectorX) + (ix % ItemsPerVectorX);
 	      int ty = offset_y + (vy * ThreadsPerWarpY * ItemsPerVectorY) + (iy % ItemsPerVectorY);
-	      int c_idx = (grid_raster.block_item_coords.x + tx) * dim_m +
-		grid_raster.block_item_coords.y + ty;
+	      int bx = ItemsPerBlockX * blockIdx.y;
+	      int by = ItemsPerBlockY * blockIdx.x;
+	      int c_idx = (bx + tx) * dim_m + by + ty;
 	      float *my_c = d_c + c_idx;
 #pragma unroll
 	      for (int i = 0; i < ItemsPerVectorY; ++i) {
 		float c_slice = float(0);
 		float *c_ptr = my_c + i;
-		if ((grid_raster.block_item_coords.x + tx) < dim_n &&
-		    (grid_raster.block_item_coords.y + ty + i) < dim_m) {
+		if ((bx + tx) < dim_n &&
+		    (by + ty + i) < dim_m) {
 		  c_slice = alpha * accumulator.get(ix, iy + i) + beta * c_slice;
 		  stg_cg(c_ptr, c_slice);
 		}
