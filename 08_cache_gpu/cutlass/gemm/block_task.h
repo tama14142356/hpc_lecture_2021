@@ -61,86 +61,19 @@ namespace cutlass {
       };
 
       scratch_storage_t *scratch;
-
-      /// Pointer to matrix C
       float *d_c;
-
-      /// Matrix height in rows of trans_op(A) and C
       int dim_m;
-
-      /// Matrix width in columns of trans_op(B) and C
       int dim_n;
-
-      /// Thread block's base value_t coordinates (m, n) in matrix C
+      int dim_k;
       grid_raster_t grid_raster;
-
-      /// Thread block's current coordinate (k) within A|B matrices
-      int block_item_coords_k;
-
-      /// Thread block's ending coordinate (k) within A|B matrices (one-past)
-      int block_end_item_k;
-
-      /// Warp's coordinates (x, y) in thread block
-      int2 block_warp_coords;
-
-      /// Thread's coordinates (x, y) in warp
-      int2 warp_thread_coords;
-
-      /// Thread's base item offset within strip of A tile
       int thread_strip_offset_a;
-
-      /// Thread's base item offset within strip of B tile
       int thread_strip_offset_b;
-
-      /// Thread's active-k/prefetch-k slices from shared A tile
       lds_vector_a_t local_slices_a[2][VectorsPerThreadY];
-
-      /// Thread's active-k/prefetch-k slices from shared B tile
       lds_vector_b_t local_slices_b[2][VectorsPerThreadX];
-
-      /// A tile loader
       block_loader_a_t loader_a;
-
-      /// B tile loader
       block_loader_b_t loader_b;
-
-      /// C tile accumulator
       thread_accumulator_t accumulator;
 
-
-      //-------------------------------------------------------------------------
-      // Coordinate system helpers
-      //-------------------------------------------------------------------------
-
-      /// Compute the warp's coordinates (x, y) in thread block
-      inline __device__
-	int2 warp_coords()
-	{
-	  int warp_id = threadIdx.x / ThreadsPerWarp;
-	  return make_int2(
-			   warp_id % WarpsPerBlockX,
-			   warp_id / WarpsPerBlockX);
-	}
-
-
-      /// Compute the thread's lane-coordinates (x, y) in warp
-      inline __device__
-	int2 thread_coords()
-	{
-	  int lane_id = threadIdx.x % ThreadsPerWarp;
-
-	  // Maxwell+ mapping of threads within a 2D warp for maximal LDS bandwidth
-	  return make_int2(
-			   lane_id / ThreadsPerWarpY,
-			   lane_id % ThreadsPerWarpY);
-	}
-
-
-      //-------------------------------------------------------------------------
-      // Constructor API
-      //-------------------------------------------------------------------------
-
-      /// Constructor
       inline __device__
 	block_task(
 		   scratch_storage_t *scratch,
@@ -155,12 +88,7 @@ namespace cutlass {
 	  d_c(d_c),
 	  dim_m(dim_m),
 	  dim_n(dim_n),
-	  block_item_coords_k(0),
-	  block_end_item_k(dim_k),
-	  block_warp_coords(warp_coords()),
-	  warp_thread_coords(thread_coords()),
-	  thread_strip_offset_a((warp_thread_coords.y * ItemsPerVectorY) + (block_warp_coords.y * ItemsPerWarpY)),
-	  thread_strip_offset_b((warp_thread_coords.x * ItemsPerVectorX) + (block_warp_coords.x * ItemsPerWarpX)),
+	  dim_k(dim_k),
 
 	  loader_a(
 		   d_a,
@@ -176,18 +104,19 @@ namespace cutlass {
 	  {}
 
 
-      //-------------------------------------------------------------------------
-      // Prefetching utility methods
-      //-------------------------------------------------------------------------
-
-      /**
-       * Request the calling thread's slices of the shared tiles at depth \p tile_offset_k
-       */
       inline __device__ void request_local_prefetch(
 						    lds_vector_a_t (&slice_a)[VectorsPerThreadY],  ///< Slice from A
 						    lds_vector_b_t (&slice_b)[VectorsPerThreadX],  ///< Slice from B
 						    int tile_offset_k)
       {
+	int warp_id = threadIdx.x / ThreadsPerWarp;
+	int warp_x = warp_id % WarpsPerBlockX;
+	int warp_y = warp_id / WarpsPerBlockX;
+	int lane_id = threadIdx.x % ThreadsPerWarp;
+	int lane_x = lane_id / ThreadsPerWarpY;
+	int lane_y = lane_id % ThreadsPerWarpY;
+	thread_strip_offset_a = lane_y * ItemsPerVectorY + warp_y * ItemsPerWarpY;
+	thread_strip_offset_b = lane_x * ItemsPerVectorX + warp_x * ItemsPerWarpX;
 	// Load B strip
 	for (int i = 0; i < VectorsPerThreadX; ++i)
 	{
@@ -315,11 +244,7 @@ namespace cutlass {
       __forceinline__ __device__
 	void run()
 	{
-	  // Quit if the thread block is fully out-of-bounds
-	  if (grid_raster.is_block_oob(dim_m, dim_n))
-	  {
-	    asm volatile("exit;");
-	  }
+	  int block_item_coords_k = 0;
 
 	  // Request global prefetch of first tile
 	  loader_a.request();
@@ -350,7 +275,7 @@ namespace cutlass {
 
 	  // Consume tiles in A and B along the K-axis (all but last tile)
 #pragma unroll 1
-	  while (block_item_coords_k < block_end_item_k)
+	  while (block_item_coords_k < dim_k)
 	  {
 	    consume_tile<true>();
 
