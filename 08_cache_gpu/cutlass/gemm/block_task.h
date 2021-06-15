@@ -48,7 +48,6 @@ namespace cutlass {
       struct scratch_storage_t {
 	float __align__(16) block_a[ItemsPerBlockK][ItemsPerBlockY];
 	float __align__(16) block_b[ItemsPerBlockK][ItemsPerBlockX];
-	typename thread_accumulator_t::scratch_storage_t accum_scratch;
       };
 
       scratch_storage_t *scratch;
@@ -80,7 +79,7 @@ namespace cutlass {
 	  dim_k(dim_k),
 	  loader_a(d_a, dim_m, ItemsPerBlockY * blockIdx.x),
 	  loader_b(d_b, dim_k, ItemsPerBlockX * blockIdx.y),
-	  accumulator(scratch->accum_scratch)
+	  accumulator()
 	  {}
 
       inline __device__ void request_local_prefetch(lds_vector_a_t (&slice_a)[VectorsPerThreadY],
