@@ -37,16 +37,13 @@ namespace cutlass {
 
       matrix_t *d_b;
       int stride_l;
-      int vector_k;
-      int vector_l;
       matrix_t thread_tile[VectorsPerThreadX];
 
       inline __device__
 	block_loader_b_t(float *d_b, int dim_k, int block_offset) {
 	  stride_l = dim_k / ItemsPerVectorX;
-	  vector_k = threadIdx.x % VectorsPerBlockK;
-	  vector_l = threadIdx.x / VectorsPerBlockK;
-	  int tile_k = vector_k;
+	  int vector_l = threadIdx.x / VectorsPerBlockK;
+	  int tile_k = threadIdx.x % VectorsPerBlockK;
 	  int tile_l = vector_l + block_offset;
 	  this->d_b = reinterpret_cast<matrix_t*>(d_b) + tile_l * stride_l + tile_k;
 	}
@@ -55,22 +52,21 @@ namespace cutlass {
 	void request() {
 #pragma unroll
 	  for (int i = 0; i < VectorsPerThreadX; ++i) {
-	    thread_tile[i].load(d_b + (i * ThreadsPerBlockL * stride_l));
+	    thread_tile[i].load(d_b + i * ThreadsPerBlockL * stride_l);
 	  }
 	  d_b += VectorsPerBlockK;
 	}
 
-      template <int SmemDpVectorsL>
+      template <int ItemsPerBlockX>
 	inline __device__
-	void commit(float (&scratch_tile)[ItemsPerBlockK][SmemDpVectorsL]) {
-	  int block_ldgvec_k = vector_k;
+	void commit(float (&scratch_tile)[ItemsPerBlockK][ItemsPerBlockX]) {
+	  int vector_k = threadIdx.x % VectorsPerBlockK;
+	  int vector_l = threadIdx.x / VectorsPerBlockK;
 #pragma unroll
 	  for (int i = 0; i < VectorsPerThreadX; ++i) {
-	    int block_ldgvec_l = vector_l + (i * ThreadsPerBlockL);
 #pragma unroll
 	    for (int j = 0; j < ItemsPerVectorX; ++j) {
-	      scratch_tile[(block_ldgvec_k * ItemsPerVectorX) + j][block_ldgvec_l] =
-		thread_tile[i].buff[j];
+	      scratch_tile[vector_k * ItemsPerVectorX + j][vector_l + i * ThreadsPerBlockL] = thread_tile[i].buff[j];
 	    }
 	  }
 	}
