@@ -1,7 +1,6 @@
 #pragma once
 
 #include "../util/util.h"
-#include "dp_accummulate.h"
 
 namespace cutlass {
 namespace gemm {
@@ -10,22 +9,31 @@ template <
     int ItemsPerThreadsY,
     int ItemsPerThreadsX>
 struct thread_accumulator {
-protected:
-  typedef dp_accummulate<float, float> dp_floatraits_t;
 
 protected:
   float accumulators[ItemsPerThreadsY][ItemsPerThreadsX];
+
+  inline __device__
+    static void mad(
+		    float &d,
+		    const float &a,
+		    const float &b,
+		    const float &c)
+    {
+      asm volatile ( "fma.rn.f32 %0, %1, %2, %3;\n"
+		     : "=f"(d) : "f"(a), "f"(b), "f"(c));
+    }
 
   inline __device__
     void mad_xy(float (&tile_a)[ItemsPerThreadsY],
 		float (&tile_b)[ItemsPerThreadsX],
 		int x,
 		int y) {
-      dp_floatraits_t::mad(
-			   accumulators[y][x],
-			   tile_a[y],
-			   tile_b[x],
-			   accumulators[y][x]);
+      mad(
+	  accumulators[y][x],
+	  tile_a[y],
+	  tile_b[x],
+	  accumulators[y][x]);
     }
 
 public:
