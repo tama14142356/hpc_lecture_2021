@@ -38,8 +38,7 @@ namespace cutlass {
 	ThreadsPerBlockL = ThreadsPerBlock / VectorsPerBlockK // 32
       };
 
-      typedef io_vector lds_vector_a_t;
-      typedef io_vector lds_vector_b_t;
+      typedef io_vector matrix_t;
 
       struct scratch_storage_t {
 	float __align__(16) block_a[ItemsPerBlockK][ItemsPerBlockY];
@@ -53,8 +52,8 @@ namespace cutlass {
       int dim_k;
       int offset_y;
       int offset_x;
-      lds_vector_a_t local_slices_a[2][VectorsPerThreadY];
-      lds_vector_b_t local_slices_b[2][VectorsPerThreadX];
+      matrix_t local_slices_a[2][VectorsPerThreadY];
+      matrix_t local_slices_b[2][VectorsPerThreadX];
       block_loader_a_t loader_a;
       block_loader_b_t loader_b;
       float accumulators[ItemsPerThreadY][ItemsPerThreadX];
@@ -97,8 +96,8 @@ namespace cutlass {
 	  loader_a(d_a, dim_m, ItemsPerBlockY * blockIdx.x),
 	  loader_b(d_b, dim_k, ItemsPerBlockX * blockIdx.y) {}
 
-      inline __device__ void request_local_prefetch(lds_vector_a_t (&slice_a)[VectorsPerThreadY],
-						    lds_vector_b_t (&slice_b)[VectorsPerThreadX],
+      inline __device__ void request_local_prefetch(matrix_t (&slice_a)[VectorsPerThreadY],
+						    matrix_t (&slice_b)[VectorsPerThreadX],
 						    int offset_k)
       {
 	int warp_id = threadIdx.x / ThreadsPerWarp;
@@ -110,10 +109,10 @@ namespace cutlass {
 	offset_y = lane_y * ItemsPerVectorY + warp_y * ItemsPerWarpY;
 	offset_x = lane_x * ItemsPerVectorX + warp_x * ItemsPerWarpX;
 	for (int i = 0; i < VectorsPerThreadX; ++i) {
-	  slice_b[i].load(&scratch->block_b[offset_k][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
+	  slice_b[i] = *reinterpret_cast<const matrix_t*>(&scratch->block_b[offset_k][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
 	}
 	for (int i = 0; i < VectorsPerThreadY; ++i) {
-	  slice_a[i].load(&scratch->block_a[offset_k][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
+	  slice_a[i] = *reinterpret_cast<const io_vector*>(&scratch->block_a[offset_k][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
 	}
       }
 
