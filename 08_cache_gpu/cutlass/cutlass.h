@@ -38,10 +38,13 @@ namespace cutlass {
     float __align__(16) block_b[ItemsPerBlockK][ItemsPerBlockX];
   };
 
-  struct block_loader_a_t {
+  struct block_loader_t {
     fvec4 *d_a;
+    fvec4 *d_b;
     int stride_k;
+    int stride_l;
     fvec4 tile_a[VectorsPerThreadX];
+    fvec4 tile_b[VectorsPerThreadX];
 
     inline __device__
       void init_a(float *d_a, int dim_m, int block_offset) {
@@ -71,12 +74,6 @@ namespace cutlass {
 	    tile_a[i];
 	}
       }
-  };
-
-  struct block_loader_b_t {
-    fvec4 *d_b;
-    int stride_l;
-    fvec4 tile_b[VectorsPerThreadX];
 
     inline __device__
       void init_b(float *d_b, int dim_k, int block_offset) {
@@ -175,14 +172,13 @@ namespace cutlass {
       float accumulators[ItemsPerThreadY][ItemsPerThreadX];
 
       int block_item_coords_k = 0;
-      block_loader_a_t loader_a;
-      block_loader_b_t loader_b;
-      loader_a.init_a(d_a, dim_m, ItemsPerBlockY * blockIdx.x);
-      loader_b.init_b(d_b, dim_k, ItemsPerBlockX * blockIdx.y);
-      loader_a.request_a();
-      loader_b.request_b();
-      loader_a.commit_a(scratch->block_a);
-      loader_b.commit_b(scratch->block_b);
+      block_loader_t loader;
+      loader.init_a(d_a, dim_m, ItemsPerBlockY * blockIdx.x);
+      loader.init_b(d_b, dim_k, ItemsPerBlockX * blockIdx.y);
+      loader.request_a();
+      loader.request_b();
+      loader.commit_a(scratch->block_a);
+      loader.commit_b(scratch->block_b);
       block_item_coords_k += ItemsPerBlockK;
       __syncthreads();
 #pragma unroll
@@ -205,8 +201,8 @@ namespace cutlass {
 	for (int offset_k = 0; offset_k < ItemsPerBlockK; offset_k += 1) {
 	  if ((offset_k == ItemsPerBlockK - 1)) {
 	    __syncthreads();
-	    loader_a.commit_a(scratch->block_a);
-	    loader_b.commit_b(scratch->block_b);
+	    loader.commit_a(scratch->block_a);
+	    loader.commit_b(scratch->block_b);
 	    __syncthreads();
 	  }
 	  request_local_prefetch(scratch,
@@ -216,8 +212,8 @@ namespace cutlass {
 				 offset_x,
 				 (offset_k + 1) % ItemsPerBlockK);
 	  if ((offset_k == 0)) {
-	    loader_b.request_b();
-	    loader_a.request_a();
+	    loader.request_b();
+	    loader.request_a();
 	  }
 	  typedef float tile_a_t[VectorsPerThreadY * ItemsPerVectorY];
 	  typedef float tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
