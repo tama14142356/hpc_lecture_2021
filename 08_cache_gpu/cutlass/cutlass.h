@@ -155,8 +155,8 @@ namespace cutlass {
     int lane_y = lane_id % ThreadsPerWarpY;
     int offset_y = lane_y * ItemsPerVectorY + warp_y * ItemsPerWarpY;
     int offset_x = lane_x * ItemsPerVectorX + warp_x * ItemsPerWarpX;
-    fvec4 local_slices_a[2][VectorsPerThreadY];
-    fvec4 local_slices_b[2][VectorsPerThreadX];
+    fvec4 slice_a[2][VectorsPerThreadY];
+    fvec4 slice_b[2][VectorsPerThreadX];
     float accumulators[ItemsPerThreadY][ItemsPerThreadX];
 
     int block_item_coords_k = 0;
@@ -187,8 +187,8 @@ namespace cutlass {
     }
     request_local_prefetch(block_a,
 			   block_b,
-			   local_slices_a[0],
-			   local_slices_b[0],
+			   slice_a[0],
+			   slice_b[0],
 			   offset_y,
 			   offset_x,
 			   0);
@@ -204,8 +204,8 @@ namespace cutlass {
 	}
 	request_local_prefetch(block_a,
 			       block_b,
-			       local_slices_a[(offset_k + 1) % 2],
-			       local_slices_b[(offset_k + 1) % 2],
+			       slice_a[(offset_k + 1) % 2],
+			       slice_b[(offset_k + 1) % 2],
 			       offset_y,
 			       offset_x,
 			       (offset_k + 1) % ItemsPerBlockK);
@@ -215,8 +215,8 @@ namespace cutlass {
 	}
 	typedef float tile_a_t[ItemsPerThreadY];
 	typedef float tile_b_t[ItemsPerThreadX];
-	tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(local_slices_a[(offset_k) % 2]);
-	tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(local_slices_b[(offset_k) % 2]);
+	tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(slice_a[(offset_k) % 2]);
+	tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(slice_b[(offset_k) % 2]);
 #pragma unroll
 	for (int y = 0; y < ItemsPerThreadY; ++y) {
 #pragma unroll
@@ -231,15 +231,15 @@ namespace cutlass {
     for (int offset_k = 0; offset_k < ItemsPerBlockK; offset_k += 1) {
       request_local_prefetch(block_a,
 			     block_b,
-			     local_slices_a[(offset_k + 1) % 2],
-			     local_slices_b[(offset_k + 1) % 2],
+			     slice_a[(offset_k + 1) % 2],
+			     slice_b[(offset_k + 1) % 2],
 			     offset_y,
 			     offset_x,
 			     (offset_k + 1) % ItemsPerBlockK);
       typedef float tile_a_t[ItemsPerThreadY];
       typedef float tile_b_t[ItemsPerThreadX];
-      tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(local_slices_a[(offset_k) % 2]);
-      tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(local_slices_b[(offset_k) % 2]);
+      tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(slice_a[(offset_k) % 2]);
+      tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(slice_b[(offset_k) % 2]);
 #pragma unroll
       for (int y = 0; y < ItemsPerThreadY; ++y) {
 #pragma unroll
