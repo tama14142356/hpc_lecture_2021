@@ -92,12 +92,11 @@ namespace cutlass {
     }
 
   inline __device__
-    static void gemm(float &d,
-		     const float &a,
+    static void gemm(const float &a,
 		     const float &b,
-		     const float &c) {
+		     float &c) {
       asm volatile ( "fma.rn.f32 %0, %1, %2, %3;\n"
-		     : "=f"(d) : "f"(a), "f"(b), "f"(c));
+		     : "=f"(c) : "f"(a), "f"(b), "f"(c));
     }
 
   inline __device__ void prefetch(block_y_t &block_a,
@@ -148,13 +147,10 @@ namespace cutlass {
     commit(block_a, thread_a, block_b, thread_b);
     __syncthreads();
 #pragma unroll
-    for (int y = 0; y < ItemsPerThreadY; ++y) {
+    for (int y = 0; y < ItemsPerThreadY; ++y)
 #pragma unroll
       for (int x = 0; x < ItemsPerThreadX; ++x)
-      {
 	tile_c[y][x] = float(0);
-      }
-    }
     prefetch(block_a,
 	     block_b,
 	     slice_a[0],
@@ -187,7 +183,7 @@ namespace cutlass {
 	for (int y = 0; y < ItemsPerThreadY; ++y) {
 #pragma unroll
 	  for (int x = 0; x < ItemsPerThreadX; ++x) {
-	    gemm(tile_c[y][x], tile_a[y], tile_b[x], tile_c[y][x]);
+	    gemm(tile_a[y], tile_b[x], tile_c[y][x]);
 	  }
 	}
       }
@@ -204,11 +200,8 @@ namespace cutlass {
 	int by = ItemsPerBlockY * blockIdx.x + ty;
 #pragma unroll
 	for (int i = 0; i < ItemsPerVectorY; ++i) {
-	  int c_idx = bx * dim_m + by + i;
-	  float slice_c = float(0);
 	  if (bx < dim_n && (by + i) < dim_m) {
-	    slice_c += tile_c[iy + i][ix];
-	    store(d_c + c_idx, slice_c);
+	    store(d_c + bx * dim_m + by + i, tile_c[iy + i][ix]);
 	  }
 	}
       }
