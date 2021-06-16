@@ -5,8 +5,9 @@
 #include <cublas_v2.h>
 #define DEBUG
 
-#include <dispatch.h>
+#include "cutlass.h"
 #include "timer.h"
+using namespace cutlass;
 
 int main(int argc, const char **argv) {
   int m = 10240;
@@ -63,13 +64,12 @@ int main(int argc, const char **argv) {
   dim3 grid = dim3((m+tile-1)/tile, (n+tile-1)/tile);
   for (int i = 0; i < g_timing_iterations+2; i++) {
     if (i == 2) timer.start();
-    kernel<<< grid, block >>>(
-        m,
-        n,
-        k,
-        A,
-        B,
-        C2);
+    kernel<<< grid, block >>>(m,
+			      n,
+			      k,
+			      A,
+			      B,
+			      C2);
   }
   timer.stop();
   double tcutlass = timer.elapsed_millis() / g_timing_iterations;
