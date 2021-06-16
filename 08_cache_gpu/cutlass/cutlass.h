@@ -55,12 +55,12 @@ namespace cutlass {
     }
 
   inline __device__
-    void commit_a(float (&scratch_tile)[ItemsPerBlockK][ItemsPerBlockY], fvec4 thread_a[VectorsPerThreadX]) {
+    void commit_a(float (&block_a)[ItemsPerBlockK][ItemsPerBlockY], fvec4 thread_a[VectorsPerThreadX]) {
       int vector_k = threadIdx.x / VectorsPerBlockX;
       int vector_l = threadIdx.x % VectorsPerBlockX;
 #pragma unroll
       for (int i = 0; i < VectorsPerThreadX; ++i) {
-	*reinterpret_cast<fvec4*>(&scratch_tile[vector_k + i * ThreadsPerBlockK][vector_l * ItemsPerVectorX]) =
+	*reinterpret_cast<fvec4*>(&block_a[vector_k + i * ThreadsPerBlockK][vector_l * ItemsPerVectorX]) =
 	  thread_a[i];
       }
     }
@@ -85,14 +85,14 @@ namespace cutlass {
 
     template <int ItemsPerBlockX>
       inline __device__
-      void commit_b(float (&scratch_tile)[ItemsPerBlockK][ItemsPerBlockX], fvec4 thread_b[VectorsPerThreadX]) {
+      void commit_b(float (&block_b)[ItemsPerBlockK][ItemsPerBlockX], fvec4 thread_b[VectorsPerThreadX]) {
 	int vector_k = threadIdx.x % VectorsPerBlockK;
 	int vector_l = threadIdx.x / VectorsPerBlockK;
 #pragma unroll
 	for (int i = 0; i < VectorsPerThreadX; ++i) {
 #pragma unroll
 	  for (int j = 0; j < ItemsPerVectorX; ++j) {
-	    scratch_tile[vector_k * ItemsPerVectorX + j][vector_l + i * ThreadsPerBlockL] = thread_b[i].data[j];
+	    block_b[vector_k * ItemsPerVectorX + j][vector_l + i * ThreadsPerBlockL] = thread_b[i].data[j];
 	  }
 	}
       }
@@ -213,8 +213,8 @@ namespace cutlass {
 	  request_a(stride_k, &global_a, thread_a);
 	  request_b(stride_l, &global_b, thread_b);
 	}
-	typedef float tile_a_t[VectorsPerThreadY * ItemsPerVectorY];
-	typedef float tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
+	typedef float tile_a_t[ItemsPerThreadY];
+	typedef float tile_b_t[ItemsPerThreadX];
 	tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(local_slices_a[(offset_k) % 2]);
 	tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(local_slices_b[(offset_k) % 2]);
 #pragma unroll
@@ -236,8 +236,8 @@ namespace cutlass {
 			     offset_y,
 			     offset_x,
 			     (offset_k + 1) % ItemsPerBlockK);
-      typedef float tile_a_t[VectorsPerThreadY * ItemsPerVectorY];
-      typedef float tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
+      typedef float tile_a_t[ItemsPerThreadY];
+      typedef float tile_b_t[ItemsPerThreadX];
       tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(local_slices_a[(offset_k) % 2]);
       tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(local_slices_b[(offset_k) % 2]);
 #pragma unroll
