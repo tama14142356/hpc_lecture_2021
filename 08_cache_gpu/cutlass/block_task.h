@@ -1,7 +1,6 @@
 #pragma once
 
 #include <stdint.h>
-#include "block_loader.h"
 
 namespace cutlass {
   namespace gemm {
@@ -41,6 +40,78 @@ namespace cutlass {
       float __align__(16) block_b[ItemsPerBlockK][ItemsPerBlockX];
     };
 
+    struct block_loader_a_t {
+      fvec4 *d_a;
+      int stride_k;
+      fvec4 tile_a[VectorsPerThreadX];
+
+      inline __device__
+	void init_a(float *d_a, int dim_m, int block_offset) {
+	  stride_k = dim_m / ItemsPerVectorX;
+	  int vector_l = threadIdx.x % VectorsPerBlockX;
+	  int tile_k = threadIdx.x / VectorsPerBlockX;
+	  int tile_l = vector_l + block_offset / ItemsPerVectorX;
+	  this->d_a = reinterpret_cast<fvec4*>(d_a) + tile_k * stride_k + tile_l;
+	}
+
+      inline __device__
+	void request_a() {
+#pragma unroll
+	  for (int i = 0; i < VectorsPerThreadX; ++i) {
+	    tile_a[i] = d_a[i * ThreadsPerBlockK * stride_k];
+	  }
+	  d_a += (stride_k * ItemsPerBlockK);
+	}
+
+      inline __device__
+	void commit_a(float (&scratch_tile)[ItemsPerBlockK][ItemsPerBlockY]) {
+	  int vector_k = threadIdx.x / VectorsPerBlockX;
+	  int vector_l = threadIdx.x % VectorsPerBlockX;
+#pragma unroll
+	  for (int i = 0; i < VectorsPerThreadX; ++i) {
+	    *reinterpret_cast<fvec4*>(&scratch_tile[vector_k + i * ThreadsPerBlockK][vector_l * ItemsPerVectorX]) =
+	      tile_a[i];
+	  }
+	}
+    };
+
+    struct block_loader_b_t {
+      fvec4 *d_b;
+      int stride_l;
+      fvec4 tile_b[VectorsPerThreadX];
+
+      inline __device__
+	void init_b(float *d_b, int dim_k, int block_offset) {
+	  stride_l = dim_k / ItemsPerVectorX;
+	  int vector_l = threadIdx.x / VectorsPerBlockK;
+	  int tile_k = threadIdx.x % VectorsPerBlockK;
+	  int tile_l = vector_l + block_offset;
+	  this->d_b = reinterpret_cast<fvec4*>(d_b) + tile_l * stride_l + tile_k;
+	}
+
+      inline __device__
+	void request_b() {
+#pragma unroll
+	  for (int i = 0; i < VectorsPerThreadX; ++i) {
+	    tile_b[i] = d_b[i * ThreadsPerBlockL * stride_l];
+	  }
+	  d_b += VectorsPerBlockK;
+	}
+
+      template <int ItemsPerBlockX>
+	inline __device__
+	void commit_b(float (&scratch_tile)[ItemsPerBlockK][ItemsPerBlockX]) {
+	  int vector_k = threadIdx.x % VectorsPerBlockK;
+	  int vector_l = threadIdx.x / VectorsPerBlockK;
+#pragma unroll
+	  for (int i = 0; i < VectorsPerThreadX; ++i) {
+#pragma unroll
+	    for (int j = 0; j < ItemsPerVectorX; ++j) {
+	      scratch_tile[vector_k * ItemsPerVectorX + j][vector_l + i * ThreadsPerBlockL] = tile_b[i].data[j];
+	    }
+	  }
+	}
+    };
 
     inline __device__
       void store(float *ptr, const float &src) {
