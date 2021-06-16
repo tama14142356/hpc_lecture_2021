@@ -36,10 +36,10 @@ namespace cutlass {
 
       fvec4 *d_a;
       int stride_k;
-      fvec4 thread_tile[VectorsPerThreadX];
+      fvec4 tile_a[VectorsPerThreadX];
 
       inline __device__
-	block_loader_a_t(float *d_a, int dim_m, int block_offset) {
+	void init_a(float *d_a, int dim_m, int block_offset) {
 	  stride_k = dim_m / ItemsPerVectorX;
 	  int vector_l = threadIdx.x % VectorsPerBlockX;
 	  int tile_k = threadIdx.x / VectorsPerBlockX;
@@ -48,22 +48,22 @@ namespace cutlass {
 	}
 
       inline __device__
-	void request() {
+	void request_a() {
 #pragma unroll
 	  for (int i = 0; i < VectorsPerThreadX; ++i) {
-	    thread_tile[i] = d_a[i * ThreadsPerBlockK * stride_k];
+	    tile_a[i] = d_a[i * ThreadsPerBlockK * stride_k];
 	  }
 	  d_a += (stride_k * ItemsPerBlockK);
 	}
 
       inline __device__
-	void commit(float (&scratch_tile)[ItemsPerBlockK][ItemsPerBlockY]) {
+	void commit_a(float (&scratch_tile)[ItemsPerBlockK][ItemsPerBlockY]) {
 	  int vector_k = threadIdx.x / VectorsPerBlockX;
 	  int vector_l = threadIdx.x % VectorsPerBlockX;
 #pragma unroll
 	  for (int i = 0; i < VectorsPerThreadX; ++i) {
 	    *reinterpret_cast<fvec4*>(&scratch_tile[vector_k + i * ThreadsPerBlockK][vector_l * ItemsPerVectorX]) =
-	      thread_tile[i];
+	      tile_a[i];
 	  }
 	}
     };

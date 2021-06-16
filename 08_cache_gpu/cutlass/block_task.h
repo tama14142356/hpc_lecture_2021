@@ -104,15 +104,17 @@ namespace cutlass {
 	int offset_x = lane_x * ItemsPerVectorX + warp_x * ItemsPerWarpX;
 	fvec4 local_slices_a[2][VectorsPerThreadY];
 	fvec4 local_slices_b[2][VectorsPerThreadX];
-	block_loader_a_t loader_a(d_a, dim_m, ItemsPerBlockY * blockIdx.x);
-	block_loader_b_t loader_b(d_b, dim_k, ItemsPerBlockX * blockIdx.y);
 	float accumulators[ItemsPerThreadY][ItemsPerThreadX];
 
 	int block_item_coords_k = 0;
-	loader_a.request();
-	loader_b.request();
-	loader_a.commit(scratch->block_a);
-	loader_b.commit(scratch->block_b);
+	block_loader_a_t loader_a;
+	block_loader_b_t loader_b;
+	loader_a.init_a(d_a, dim_m, ItemsPerBlockY * blockIdx.x);
+	loader_b.init_b(d_b, dim_k, ItemsPerBlockX * blockIdx.y);
+	loader_a.request_a();
+	loader_b.request_b();
+	loader_a.commit_a(scratch->block_a);
+	loader_b.commit_b(scratch->block_b);
 	block_item_coords_k += ItemsPerBlockK;
 	__syncthreads();
 #pragma unroll
@@ -135,8 +137,8 @@ namespace cutlass {
 	  for (int offset_k = 0; offset_k < ItemsPerBlockK; offset_k += 1) {
 	    if ((offset_k == ItemsPerBlockK - 1)) {
 	      __syncthreads();
-	      loader_a.commit(scratch->block_a);
-	      loader_b.commit(scratch->block_b);
+	      loader_a.commit_a(scratch->block_a);
+	      loader_b.commit_b(scratch->block_b);
 	      __syncthreads();
 	    }
 	    request_local_prefetch(scratch,
@@ -146,8 +148,8 @@ namespace cutlass {
 				   offset_x,
 				   (offset_k + 1) % ItemsPerBlockK);
 	    if ((offset_k == 0)) {
-	      loader_b.request();
-	      loader_a.request();
+	      loader_b.request_b();
+	      loader_a.request_a();
 	    }
 	    typedef float tile_a_t[VectorsPerThreadY * ItemsPerVectorY];
 	    typedef float tile_b_t[VectorsPerThreadX * ItemsPerVectorX];

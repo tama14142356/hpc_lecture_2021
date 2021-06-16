@@ -36,10 +36,10 @@ namespace cutlass {
 
       fvec4 *d_b;
       int stride_l;
-      fvec4 thread_tile[VectorsPerThreadX];
+      fvec4 tile_b[VectorsPerThreadX];
 
       inline __device__
-	block_loader_b_t(float *d_b, int dim_k, int block_offset) {
+	void init_b(float *d_b, int dim_k, int block_offset) {
 	  stride_l = dim_k / ItemsPerVectorX;
 	  int vector_l = threadIdx.x / VectorsPerBlockK;
 	  int tile_k = threadIdx.x % VectorsPerBlockK;
@@ -48,24 +48,24 @@ namespace cutlass {
 	}
 
       inline __device__
-	void request() {
+	void request_b() {
 #pragma unroll
 	  for (int i = 0; i < VectorsPerThreadX; ++i) {
-	    thread_tile[i] = d_b[i * ThreadsPerBlockL * stride_l];
+	    tile_b[i] = d_b[i * ThreadsPerBlockL * stride_l];
 	  }
 	  d_b += VectorsPerBlockK;
 	}
 
       template <int ItemsPerBlockX>
 	inline __device__
-	void commit(float (&scratch_tile)[ItemsPerBlockK][ItemsPerBlockX]) {
+	void commit_b(float (&scratch_tile)[ItemsPerBlockK][ItemsPerBlockX]) {
 	  int vector_k = threadIdx.x % VectorsPerBlockK;
 	  int vector_l = threadIdx.x / VectorsPerBlockK;
 #pragma unroll
 	  for (int i = 0; i < VectorsPerThreadX; ++i) {
 #pragma unroll
 	    for (int j = 0; j < ItemsPerVectorX; ++j) {
-	      scratch_tile[vector_k * ItemsPerVectorX + j][vector_l + i * ThreadsPerBlockL] = thread_tile[i].data[j];
+	      scratch_tile[vector_k * ItemsPerVectorX + j][vector_l + i * ThreadsPerBlockL] = tile_b[i].data[j];
 	    }
 	  }
 	}
