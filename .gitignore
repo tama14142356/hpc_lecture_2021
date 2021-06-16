@@ -1,4 +1,6 @@
 .tags
 .python-version
+data
+runs
 *.out
 *.swp
