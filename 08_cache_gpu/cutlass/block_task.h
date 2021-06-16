@@ -1,7 +1,6 @@
 #pragma once
 
 #include <stdint.h>
-#include "io_intrinsics.h"
 #include "block_loader_crosswise.h"
 #include "block_loader_congruous.h"
 
@@ -38,7 +37,7 @@ namespace cutlass {
 	ThreadsPerBlockL = ThreadsPerBlock / VectorsPerBlockK // 32
       };
 
-      typedef io_vector matrix_t;
+      struct __align__(16) fvec4 { float data[4]; };
 
       struct scratch_storage_t {
 	float __align__(16) block_a[ItemsPerBlockK][ItemsPerBlockY];
@@ -52,11 +51,19 @@ namespace cutlass {
       int dim_k;
       int offset_y;
       int offset_x;
-      matrix_t local_slices_a[2][VectorsPerThreadY];
-      matrix_t local_slices_b[2][VectorsPerThreadX];
+      fvec4 local_slices_a[2][VectorsPerThreadY];
+      fvec4 local_slices_b[2][VectorsPerThreadX];
       block_loader_a_t loader_a;
       block_loader_b_t loader_b;
       float accumulators[ItemsPerThreadY][ItemsPerThreadX];
+
+      inline __device__
+	void stg_cg(float *ptr, const float &src) {
+	  asm volatile ("st.global.cg.f32 [%0], %1;\n"
+			: :
+			"l"(ptr),
+			"f"(src));
+	}
 
       inline __device__
 	static void mad(float &d,
@@ -96,8 +103,8 @@ namespace cutlass {
 	  loader_a(d_a, dim_m, ItemsPerBlockY * blockIdx.x),
 	  loader_b(d_b, dim_k, ItemsPerBlockX * blockIdx.y) {}
 
-      inline __device__ void request_local_prefetch(matrix_t (&slice_a)[VectorsPerThreadY],
-						    matrix_t (&slice_b)[VectorsPerThreadX],
+      inline __device__ void request_local_prefetch(fvec4 (&slice_a)[VectorsPerThreadY],
+						    fvec4 (&slice_b)[VectorsPerThreadX],
 						    int offset_k)
       {
 	int warp_id = threadIdx.x / ThreadsPerWarp;
@@ -109,10 +116,10 @@ namespace cutlass {
 	offset_y = lane_y * ItemsPerVectorY + warp_y * ItemsPerWarpY;
 	offset_x = lane_x * ItemsPerVectorX + warp_x * ItemsPerWarpX;
 	for (int i = 0; i < VectorsPerThreadX; ++i) {
-	  slice_b[i] = *reinterpret_cast<const matrix_t*>(&scratch->block_b[offset_k][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
+	  slice_b[i] = *reinterpret_cast<const fvec4*>(&scratch->block_b[offset_k][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
 	}
 	for (int i = 0; i < VectorsPerThreadY; ++i) {
-	  slice_a[i] = *reinterpret_cast<const io_vector*>(&scratch->block_a[offset_k][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
+	  slice_a[i] = *reinterpret_cast<const fvec4*>(&scratch->block_a[offset_k][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
 	}
       }
 

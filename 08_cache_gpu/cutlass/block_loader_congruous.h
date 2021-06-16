@@ -32,11 +32,11 @@ namespace cutlass {
 	ThreadsPerBlockL = ThreadsPerBlock / VectorsPerBlockK // 32
       };
 
-      typedef io_vector matrix_t;
+      struct __align__(16) fvec4 { float data[4]; };
 
-      matrix_t *d_a;
+      fvec4 *d_a;
       int stride_k;
-      matrix_t thread_tile[VectorsPerThreadX];
+      fvec4 thread_tile[VectorsPerThreadX];
 
       inline __device__
 	block_loader_a_t(float *d_a, int dim_m, int block_offset) {
@@ -44,7 +44,7 @@ namespace cutlass {
 	  int vector_l = threadIdx.x % VectorsPerBlockX;
 	  int tile_k = threadIdx.x / VectorsPerBlockX;
 	  int tile_l = vector_l + block_offset / ItemsPerVectorX;
-	  this->d_a = reinterpret_cast<matrix_t*>(d_a) + tile_k * stride_k + tile_l;
+	  this->d_a = reinterpret_cast<fvec4*>(d_a) + tile_k * stride_k + tile_l;
 	}
 
       inline __device__
@@ -62,7 +62,7 @@ namespace cutlass {
 	  int vector_l = threadIdx.x % VectorsPerBlockX;
 #pragma unroll
 	  for (int i = 0; i < VectorsPerThreadX; ++i) {
-	    *reinterpret_cast<matrix_t*>(&scratch_tile[vector_k + i * ThreadsPerBlockK][vector_l * ItemsPerVectorX]) =
+	    *reinterpret_cast<fvec4*>(&scratch_tile[vector_k + i * ThreadsPerBlockK][vector_l * ItemsPerVectorX]) =
 	      thread_tile[i];
 	  }
 	}
