@@ -35,10 +35,6 @@ namespace cutlass {
 
   typedef float __align__(16) block_y_t[ItemsPerBlockK][ItemsPerBlockY];
   typedef float __align__(16) block_x_t[ItemsPerBlockK][ItemsPerBlockX];
-  struct scratch_storage_t {
-    block_y_t block_a;
-    block_x_t block_b;
-  };
 
   inline __device__
     void init_a(float *d_a, int dim_m, int block_offset, int &stride_k, fvec4 **global_a) {
@@ -130,17 +126,18 @@ namespace cutlass {
 	  C[y][x]);
     }
 
-  inline __device__ void request_local_prefetch(scratch_storage_t *scratch,
+  inline __device__ void request_local_prefetch(block_y_t &block_a,
+						block_x_t &block_b,
 						fvec4 (&slice_a)[VectorsPerThreadY],
 						fvec4 (&slice_b)[VectorsPerThreadX],
 						int offset_y,
 						int offset_x,
 						int offset_k) {
     for (int i = 0; i < VectorsPerThreadX; ++i) {
-      slice_b[i] = *reinterpret_cast<const fvec4*>(&scratch->block_b[offset_k][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
+      slice_b[i] = *reinterpret_cast<const fvec4*>(&block_b[offset_k][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
     }
     for (int i = 0; i < VectorsPerThreadY; ++i) {
-      slice_a[i] = *reinterpret_cast<const fvec4*>(&scratch->block_a[offset_k][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
+      slice_a[i] = *reinterpret_cast<const fvec4*>(&block_a[offset_k][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
     }
   }
 
@@ -169,14 +166,15 @@ namespace cutlass {
     int stride_l;
     fvec4 thread_a[VectorsPerThreadX];
     fvec4 thread_b[VectorsPerThreadX];
+    __shared__ block_y_t block_a;
+    __shared__ block_x_t block_b;
 
     init_a(d_a, dim_m, ItemsPerBlockY * blockIdx.x, stride_k, &global_a);
     init_b(d_b, dim_k, ItemsPerBlockX * blockIdx.y, stride_l, &global_b);
     request_a(stride_k, &global_a, thread_a);
     request_b(stride_l, &global_b, thread_b);
-    __shared__ scratch_storage_t scratch;
-    commit_a(scratch.block_a, thread_a);
-    commit_b(scratch.block_b, thread_b);
+    commit_a(block_a, thread_a);
+    commit_b(block_b, thread_b);
     block_item_coords_k += ItemsPerBlockK;
     __syncthreads();
 #pragma unroll
@@ -187,7 +185,8 @@ namespace cutlass {
 	accumulators[y][x] = float(0);
       }
     }
-    request_local_prefetch(&scratch,
+    request_local_prefetch(block_a,
+			   block_b,
 			   local_slices_a[0],
 			   local_slices_b[0],
 			   offset_y,
@@ -199,11 +198,12 @@ namespace cutlass {
       for (int offset_k = 0; offset_k < ItemsPerBlockK; offset_k += 1) {
 	if ((offset_k == ItemsPerBlockK - 1)) {
 	  __syncthreads();
-	  commit_a(scratch.block_a, thread_a);
-	  commit_b(scratch.block_b, thread_b);
+	  commit_a(block_a, thread_a);
+	  commit_b(block_b, thread_b);
 	  __syncthreads();
 	}
-	request_local_prefetch(&scratch,
+	request_local_prefetch(block_a,
+			       block_b,
 			       local_slices_a[(offset_k + 1) % 2],
 			       local_slices_b[(offset_k + 1) % 2],
 			       offset_y,
@@ -229,7 +229,8 @@ namespace cutlass {
     }
 #pragma unroll
     for (int offset_k = 0; offset_k < ItemsPerBlockK; offset_k += 1) {
-      request_local_prefetch(&scratch,
+      request_local_prefetch(block_a,
+			     block_b,
 			     local_slices_a[(offset_k + 1) % 2],
 			     local_slices_b[(offset_k + 1) % 2],
 			     offset_y,
