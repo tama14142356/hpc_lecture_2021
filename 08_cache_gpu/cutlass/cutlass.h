@@ -163,15 +163,15 @@ namespace cutlass {
 	     offset_x,
 	     0);
 #pragma unroll
-    for (int k = ItemsPerBlockK; k < dim_k; k += ItemsPerBlockK) {
+    for (int k = 0; k < dim_k; k += ItemsPerBlockK) {
 #pragma unroll
-      for (int offset_k = 0; offset_k < ItemsPerBlockK; offset_k += 1) {
-	if ((offset_k == ItemsPerBlockK - 1)) {
+      for (int offset_k = 0; offset_k < ItemsPerBlockK; offset_k++) {
+	if ((offset_k == ItemsPerBlockK - 1) && k < dim_k-ItemsPerBlockK) {
 	  __syncthreads();
 	  commit(block_a, thread_a, block_b, thread_b);
 	  __syncthreads();
 	}
-	if ((offset_k == 0)) {
+	if ((offset_k == 0) && dim_k-ItemsPerBlockK) {
 	  request(stride_k, &global_a, thread_a, stride_l, &global_b, thread_b);
 	}
 	prefetch(block_a,
@@ -189,25 +189,6 @@ namespace cutlass {
 	  for (int x = 0; x < ItemsPerThreadX; ++x) {
 	    gemm(tile_c[y][x], tile_a[y], tile_b[x], tile_c[y][x]);
 	  }
-	}
-      }
-    }
-#pragma unroll
-    for (int offset_k = 0; offset_k < ItemsPerBlockK; offset_k += 1) {
-      prefetch(block_a,
-	       block_b,
-	       slice_a[(offset_k + 1) % 2],
-	       slice_b[(offset_k + 1) % 2],
-	       offset_y,
-	       offset_x,
-	       (offset_k + 1) % ItemsPerBlockK);
-      tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(slice_a[(offset_k) % 2]);
-      tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(slice_b[(offset_k) % 2]);
-#pragma unroll
-      for (int y = 0; y < ItemsPerThreadY; ++y) {
-#pragma unroll
-	for (int x = 0; x < ItemsPerThreadX; ++x) {
-	  gemm(tile_c[y][x], tile_a[y], tile_b[x], tile_c[y][x]);
 	}
       }
     }
