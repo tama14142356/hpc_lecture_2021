@@ -152,8 +152,7 @@ namespace cutlass {
   }
 
   __forceinline__ __device__
-    void run(scratch_storage_t *scratch,
-	     float *d_a,
+    void run(float *d_a,
 	     float *d_b,
 	     float *d_c,
 	     int dim_m,
@@ -177,8 +176,9 @@ namespace cutlass {
       loader.init_b(d_b, dim_k, ItemsPerBlockX * blockIdx.y);
       loader.request_a();
       loader.request_b();
-      loader.commit_a(scratch->block_a);
-      loader.commit_b(scratch->block_b);
+      __shared__ scratch_storage_t scratch;
+      loader.commit_a(scratch.block_a);
+      loader.commit_b(scratch.block_b);
       block_item_coords_k += ItemsPerBlockK;
       __syncthreads();
 #pragma unroll
@@ -189,7 +189,7 @@ namespace cutlass {
 	  accumulators[y][x] = float(0);
 	}
       }
-      request_local_prefetch(scratch,
+      request_local_prefetch(&scratch,
 			     local_slices_a[0],
 			     local_slices_b[0],
 			     offset_y,
@@ -201,11 +201,11 @@ namespace cutlass {
 	for (int offset_k = 0; offset_k < ItemsPerBlockK; offset_k += 1) {
 	  if ((offset_k == ItemsPerBlockK - 1)) {
 	    __syncthreads();
-	    loader.commit_a(scratch->block_a);
-	    loader.commit_b(scratch->block_b);
+	    loader.commit_a(scratch.block_a);
+	    loader.commit_b(scratch.block_b);
 	    __syncthreads();
 	  }
-	  request_local_prefetch(scratch,
+	  request_local_prefetch(&scratch,
 				 local_slices_a[(offset_k + 1) % 2],
 				 local_slices_b[(offset_k + 1) % 2],
 				 offset_y,
@@ -231,7 +231,7 @@ namespace cutlass {
       }
 #pragma unroll
       for (int offset_k = 0; offset_k < ItemsPerBlockK; offset_k += 1) {
-	request_local_prefetch(scratch,
+	request_local_prefetch(&scratch,
 			       local_slices_a[(offset_k + 1) % 2],
 			       local_slices_b[(offset_k + 1) % 2],
 			       offset_y,
@@ -275,21 +275,18 @@ namespace cutlass {
     }
 
   __global__ void kernel(
-			 int m,
-			 int n,
-			 int k,
+			 int dim_m,
+			 int dim_n,
+			 int dim_k,
 			 float *d_a,
 			 float *d_b,
 			 float *d_c)
   {
-    __shared__ scratch_storage_t smem;
-    run(
-	&smem,
-	d_a,
+    run(d_a,
 	d_b,
 	d_c,
-	m,
-	n,
-	k);
+	dim_m,
+	dim_n,
+	dim_k);
   }
 } // namespace cutlass
