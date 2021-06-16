@@ -36,6 +36,9 @@ namespace cutlass {
   typedef float __align__(16) block_y_t[ItemsPerBlockK][ItemsPerBlockY];
   typedef float __align__(16) block_x_t[ItemsPerBlockK][ItemsPerBlockX];
 
+  typedef float tile_a_t[ItemsPerThreadY];
+  typedef float tile_b_t[ItemsPerThreadX];
+
   inline __device__
     void init(float *d_a, int dim_m, int offset_a, int &stride_k, fvec4 **global_a,
               float *d_b, int dim_k, int offset_b, int &stride_l, fvec4 **global_b) {
@@ -64,8 +67,8 @@ namespace cutlass {
     }
 
   inline __device__
-    void commit(float (&block_a)[ItemsPerBlockK][ItemsPerBlockY], fvec4 thread_a[VectorsPerThreadX],
-                float (&block_b)[ItemsPerBlockK][ItemsPerBlockY], fvec4 thread_b[VectorsPerThreadX]) {
+    void commit(block_y_t (&block_a), fvec4 thread_a[VectorsPerThreadX],
+                block_x_t (&block_b), fvec4 thread_b[VectorsPerThreadX]) {
       int a_k = threadIdx.x / VectorsPerBlockX;
       int a_l = threadIdx.x % VectorsPerBlockX;
       int b_k = threadIdx.x % VectorsPerBlockK;
@@ -98,12 +101,12 @@ namespace cutlass {
     }
 
   inline __device__ void prefetch(block_y_t &block_a,
-						block_x_t &block_b,
-						fvec4 (&slice_a)[VectorsPerThreadY],
-						fvec4 (&slice_b)[VectorsPerThreadX],
-						int offset_y,
-						int offset_x,
-						int offset_k) {
+				  block_x_t &block_b,
+				  fvec4 (&slice_a)[VectorsPerThreadY],
+				  fvec4 (&slice_b)[VectorsPerThreadX],
+				  int offset_y,
+				  int offset_x,
+				  int offset_k) {
     for (int i = 0; i < VectorsPerThreadX; ++i) {
       slice_b[i] = *reinterpret_cast<const fvec4*>(&block_b[offset_k][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
     }
@@ -178,8 +181,6 @@ namespace cutlass {
 	if ((offset_k == 0)) {
 	  request(stride_k, &global_a, thread_a, stride_l, &global_b, thread_b);
 	}
-	typedef float tile_a_t[ItemsPerThreadY];
-	typedef float tile_b_t[ItemsPerThreadX];
 	tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(slice_a[(offset_k) % 2]);
 	tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(slice_b[(offset_k) % 2]);
 #pragma unroll
@@ -200,8 +201,6 @@ namespace cutlass {
 	       offset_y,
 	       offset_x,
 	       (offset_k + 1) % ItemsPerBlockK);
-      typedef float tile_a_t[ItemsPerThreadY];
-      typedef float tile_b_t[ItemsPerThreadX];
       tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(slice_a[(offset_k) % 2]);
       tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(slice_b[(offset_k) % 2]);
 #pragma unroll
