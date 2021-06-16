@@ -39,12 +39,12 @@ namespace cutlass {
   };
 
   struct block_loader_t {
-    fvec4 *d_a;
-    fvec4 *d_b;
+    fvec4 *global_a;
+    fvec4 *global_b;
     int stride_k;
     int stride_l;
-    fvec4 tile_a[VectorsPerThreadX];
-    fvec4 tile_b[VectorsPerThreadX];
+    fvec4 block_a[VectorsPerThreadX];
+    fvec4 block_b[VectorsPerThreadX];
 
     inline __device__
       void init_a(float *d_a, int dim_m, int block_offset) {
@@ -52,16 +52,16 @@ namespace cutlass {
 	int vector_l = threadIdx.x % VectorsPerBlockX;
 	int tile_k = threadIdx.x / VectorsPerBlockX;
 	int tile_l = vector_l + block_offset / ItemsPerVectorX;
-	this->d_a = reinterpret_cast<fvec4*>(d_a) + tile_k * stride_k + tile_l;
+	global_a = reinterpret_cast<fvec4*>(d_a) + tile_k * stride_k + tile_l;
       }
 
     inline __device__
       void request_a() {
 #pragma unroll
 	for (int i = 0; i < VectorsPerThreadX; ++i) {
-	  tile_a[i] = d_a[i * ThreadsPerBlockK * stride_k];
+	  block_a[i] = global_a[i * ThreadsPerBlockK * stride_k];
 	}
-	d_a += (stride_k * ItemsPerBlockK);
+	global_a += (stride_k * ItemsPerBlockK);
       }
 
     inline __device__
@@ -71,7 +71,7 @@ namespace cutlass {
 #pragma unroll
 	for (int i = 0; i < VectorsPerThreadX; ++i) {
 	  *reinterpret_cast<fvec4*>(&scratch_tile[vector_k + i * ThreadsPerBlockK][vector_l * ItemsPerVectorX]) =
-	    tile_a[i];
+	    block_a[i];
 	}
       }
 
@@ -81,16 +81,16 @@ namespace cutlass {
 	int vector_l = threadIdx.x / VectorsPerBlockK;
 	int tile_k = threadIdx.x % VectorsPerBlockK;
 	int tile_l = vector_l + block_offset;
-	this->d_b = reinterpret_cast<fvec4*>(d_b) + tile_l * stride_l + tile_k;
+	global_b = reinterpret_cast<fvec4*>(d_b) + tile_l * stride_l + tile_k;
       }
 
     inline __device__
       void request_b() {
 #pragma unroll
 	for (int i = 0; i < VectorsPerThreadX; ++i) {
-	  tile_b[i] = d_b[i * ThreadsPerBlockL * stride_l];
+	  block_b[i] = global_b[i * ThreadsPerBlockL * stride_l];
 	}
-	d_b += VectorsPerBlockK;
+	global_b += VectorsPerBlockK;
       }
 
     template <int ItemsPerBlockX>
@@ -102,7 +102,7 @@ namespace cutlass {
 	for (int i = 0; i < VectorsPerThreadX; ++i) {
 #pragma unroll
 	  for (int j = 0; j < ItemsPerVectorX; ++j) {
-	    scratch_tile[vector_k * ItemsPerVectorX + j][vector_l + i * ThreadsPerBlockL] = tile_b[i].data[j];
+	    scratch_tile[vector_k * ItemsPerVectorX + j][vector_l + i * ThreadsPerBlockL] = block_b[i].data[j];
 	  }
 	}
       }
@@ -126,15 +126,15 @@ namespace cutlass {
     }
 
   inline __device__
-    void mad_xy(float accumulators[ItemsPerThreadY][ItemsPerThreadX],
-		float (&tile_a)[ItemsPerThreadY],
-		float (&tile_b)[ItemsPerThreadX],
+    void mad_xy(float C[ItemsPerThreadY][ItemsPerThreadX],
+		float (&A)[ItemsPerThreadY],
+		float (&B)[ItemsPerThreadX],
 		int x,
 		int y) {
-      mad(accumulators[y][x],
-	  tile_a[y],
-	  tile_b[x],
-	  accumulators[y][x]);
+      mad(C[y][x],
+	  A[y],
+	  B[x],
+	  C[y][x]);
     }
 
   inline __device__ void request_local_prefetch(scratch_storage_t *scratch,
@@ -212,8 +212,8 @@ namespace cutlass {
 				 offset_x,
 				 (offset_k + 1) % ItemsPerBlockK);
 	  if ((offset_k == 0)) {
-	    loader.request_b();
 	    loader.request_a();
+	    loader.request_b();
 	  }
 	  typedef float tile_a_t[VectorsPerThreadY * ItemsPerVectorY];
 	  typedef float tile_b_t[VectorsPerThreadX * ItemsPerVectorX];
