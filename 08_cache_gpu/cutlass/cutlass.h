@@ -162,7 +162,7 @@ namespace cutlass {
 	     offset_y,
 	     offset_x,
 	     0);
-#pragma unroll 1
+#pragma unroll
     for (int k = ItemsPerBlockK; k < dim_k; k += ItemsPerBlockK) {
 #pragma unroll
       for (int offset_k = 0; offset_k < ItemsPerBlockK; offset_k += 1) {
@@ -171,6 +171,9 @@ namespace cutlass {
 	  commit(block_a, thread_a, block_b, thread_b);
 	  __syncthreads();
 	}
+	if ((offset_k == 0)) {
+	  request(stride_k, &global_a, thread_a, stride_l, &global_b, thread_b);
+	}
 	prefetch(block_a,
 		 block_b,
 		 slice_a[(offset_k + 1) % 2],
@@ -178,9 +181,6 @@ namespace cutlass {
 		 offset_y,
 		 offset_x,
 		 (offset_k + 1) % ItemsPerBlockK);
-	if ((offset_k == 0)) {
-	  request(stride_k, &global_a, thread_a, stride_l, &global_b, thread_b);
-	}
 	tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(slice_a[(offset_k) % 2]);
 	tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(slice_b[(offset_k) % 2]);
 #pragma unroll
