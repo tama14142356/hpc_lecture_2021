@@ -1,8 +1,7 @@
 #pragma once
 
 #include <stdint.h>
-#include "block_loader_crosswise.h"
-#include "block_loader_congruous.h"
+#include "block_loader.h"
 
 namespace cutlass {
   namespace gemm {
