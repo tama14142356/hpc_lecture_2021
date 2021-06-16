@@ -106,24 +106,12 @@ namespace cutlass {
     }
 
   inline __device__
-    static void mad(float &d,
-		    const float &a,
-		    const float &b,
-		    const float &c) {
+    static void gemm(float &d,
+		     const float &a,
+		     const float &b,
+		     const float &c) {
       asm volatile ( "fma.rn.f32 %0, %1, %2, %3;\n"
 		     : "=f"(d) : "f"(a), "f"(b), "f"(c));
-    }
-
-  inline __device__
-    void mad_xy(float C[ItemsPerThreadY][ItemsPerThreadX],
-		float (&A)[ItemsPerThreadY],
-		float (&B)[ItemsPerThreadX],
-		int x,
-		int y) {
-      mad(C[y][x],
-	  A[y],
-	  B[x],
-	  C[y][x]);
     }
 
   inline __device__ void request_local_prefetch(block_y_t &block_a,
@@ -157,9 +145,8 @@ namespace cutlass {
     int offset_x = lane_x * ItemsPerVectorX + warp_x * ItemsPerWarpX;
     fvec4 slice_a[2][VectorsPerThreadY];
     fvec4 slice_b[2][VectorsPerThreadX];
-    float accumulators[ItemsPerThreadY][ItemsPerThreadX];
+    float tile_c[ItemsPerThreadY][ItemsPerThreadX];
 
-    int block_item_coords_k = 0;
     fvec4 *global_a;
     fvec4 *global_b;
     int stride_k;
@@ -175,14 +162,13 @@ namespace cutlass {
     request_b(stride_l, &global_b, thread_b);
     commit_a(block_a, thread_a);
     commit_b(block_b, thread_b);
-    block_item_coords_k += ItemsPerBlockK;
     __syncthreads();
 #pragma unroll
     for (int y = 0; y < ItemsPerThreadY; ++y) {
 #pragma unroll
       for (int x = 0; x < ItemsPerThreadX; ++x)
       {
-	accumulators[y][x] = float(0);
+	tile_c[y][x] = float(0);
       }
     }
     request_local_prefetch(block_a,
@@ -193,7 +179,7 @@ namespace cutlass {
 			   offset_x,
 			   0);
 #pragma unroll 1
-    while (block_item_coords_k < dim_k) {
+    for (int k = ItemsPerBlockK; k < dim_k; k += ItemsPerBlockK) {
 #pragma unroll
       for (int offset_k = 0; offset_k < ItemsPerBlockK; offset_k += 1) {
 	if ((offset_k == ItemsPerBlockK - 1)) {
@@ -221,11 +207,10 @@ namespace cutlass {
 	for (int y = 0; y < ItemsPerThreadY; ++y) {
 #pragma unroll
 	  for (int x = 0; x < ItemsPerThreadX; ++x) {
-	    mad_xy(accumulators, tile_a, tile_b, x, y);
+	    gemm(tile_c[y][x], tile_a[y], tile_b[x], tile_c[y][x]);
 	  }
 	}
       }
-      block_item_coords_k += ItemsPerBlockK;
     }
 #pragma unroll
     for (int offset_k = 0; offset_k < ItemsPerBlockK; offset_k += 1) {
@@ -244,12 +229,10 @@ namespace cutlass {
       for (int y = 0; y < ItemsPerThreadY; ++y) {
 #pragma unroll
 	for (int x = 0; x < ItemsPerThreadX; ++x) {
-	  mad_xy(accumulators, tile_a, tile_b, x, y);
+	  gemm(tile_c[y][x], tile_a[y], tile_b[x], tile_c[y][x]);
 	}
       }
     }
-    float alpha = 1.0;
-    float beta = 0.0;
 #pragma unroll
     for (int ix = 0; ix < ItemsPerThreadX; ++ix) {
 #pragma unroll
@@ -263,10 +246,10 @@ namespace cutlass {
 #pragma unroll
 	for (int i = 0; i < ItemsPerVectorY; ++i) {
 	  int c_idx = bx * dim_m + by + i;
-	  float c_slice = float(0);
+	  float slice_c = float(0);
 	  if (bx < dim_n && (by + i) < dim_m) {
-	    c_slice = alpha * accumulators[iy + i][ix] + beta * c_slice;
-	    store(d_c + c_idx, c_slice);
+	    slice_c += tile_c[iy + i][ix];
+	    store(d_c + c_idx, slice_c);
 	  }
 	}
       }
