@@ -32,7 +32,7 @@ namespace cutlass {
 	ThreadsPerBlockL = ThreadsPerBlock / VectorsPerBlockK // 32
       };
 
-      typedef io_vector<float,ItemsPerBlockK,ItemsPerVector> matrix_t;
+      typedef io_vector matrix_t;
 
       matrix_t *d_b;
       int stride_l;
@@ -51,7 +51,7 @@ namespace cutlass {
 	void request() {
 #pragma unroll
 	  for (int i = 0; i < VectorsPerThreadX; ++i) {
-	    thread_tile[i].load(d_b + i * ThreadsPerBlockL * stride_l);
+	    thread_tile[i] = d_b[i * ThreadsPerBlockL * stride_l];
 	  }
 	  d_b += VectorsPerBlockK;
 	}

@@ -38,8 +38,8 @@ namespace cutlass {
 	ThreadsPerBlockL = ThreadsPerBlock / VectorsPerBlockK // 32
       };
 
-      typedef io_vector<float, ItemsPerVectorY> lds_vector_a_t;
-      typedef io_vector<float, ItemsPerVectorX> lds_vector_b_t;
+      typedef io_vector lds_vector_a_t;
+      typedef io_vector lds_vector_b_t;
 
       struct scratch_storage_t {
 	float __align__(16) block_a[ItemsPerBlockK][ItemsPerBlockY];
