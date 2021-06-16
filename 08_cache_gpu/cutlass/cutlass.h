@@ -37,12 +37,18 @@ namespace cutlass {
   typedef float __align__(16) block_x_t[ItemsPerBlockK][ItemsPerBlockX];
 
   inline __device__
-    void init_a(float *d_a, int dim_m, int block_offset, int &stride_k, fvec4 **global_a) {
+    void init(float *d_a, int dim_m, int offset_a, int &stride_k, fvec4 **global_a,
+              float *d_b, int dim_k, int offset_b, int &stride_l, fvec4 **global_b) {
       stride_k = dim_m / ItemsPerVectorX;
-      int vector_l = threadIdx.x % VectorsPerBlockX;
-      int tile_k = threadIdx.x / VectorsPerBlockX;
-      int tile_l = vector_l + block_offset / ItemsPerVectorX;
-      *global_a = reinterpret_cast<fvec4*>(d_a) + tile_k * stride_k + tile_l;
+      stride_l = dim_k / ItemsPerVectorX;
+      int vector_k = threadIdx.x % VectorsPerBlockX;
+      int vector_l = threadIdx.x / VectorsPerBlockK;
+      int a_k = threadIdx.x / VectorsPerBlockX;
+      int b_k = threadIdx.x % VectorsPerBlockK;
+      int a_l = vector_k + offset_a / ItemsPerVectorX;
+      int b_l = vector_l + offset_b;
+      *global_a = reinterpret_cast<fvec4*>(d_a) + a_k * stride_k + a_l;
+      *global_b = reinterpret_cast<fvec4*>(d_b) + b_l * stride_l + b_k;
     }
 
   inline __device__
@@ -63,15 +69,6 @@ namespace cutlass {
 	*reinterpret_cast<fvec4*>(&block_a[vector_k + i * ThreadsPerBlockK][vector_l * ItemsPerVectorX]) =
 	  thread_a[i];
       }
-    }
-
-  inline __device__
-    void init_b(float *d_b, int dim_k, int block_offset, int &stride_l, fvec4 **global_b) {
-      stride_l = dim_k / ItemsPerVectorX;
-      int vector_l = threadIdx.x / VectorsPerBlockK;
-      int tile_k = threadIdx.x % VectorsPerBlockK;
-      int tile_l = vector_l + block_offset;
-      *global_b = reinterpret_cast<fvec4*>(d_b) + tile_l * stride_l + tile_k;
     }
 
   inline __device__
@@ -156,8 +153,8 @@ namespace cutlass {
     __shared__ block_y_t block_a;
     __shared__ block_x_t block_b;
 
-    init_a(d_a, dim_m, ItemsPerBlockY * blockIdx.x, stride_k, &global_a);
-    init_b(d_b, dim_k, ItemsPerBlockX * blockIdx.y, stride_l, &global_b);
+    init(d_a, dim_m, ItemsPerBlockY * blockIdx.x, stride_k, &global_a,
+         d_b, dim_k, ItemsPerBlockX * blockIdx.y, stride_l, &global_b);
     request_a(stride_k, &global_a, thread_a);
     request_b(stride_l, &global_b, thread_b);
     commit_a(block_a, thread_a);
