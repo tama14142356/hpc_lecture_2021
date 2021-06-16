@@ -50,8 +50,8 @@ namespace cutlass {
       int b_k = threadIdx.x % VectorsPerBlockK;
       int a_l = vector_a + offset_a / ItemsPerVectorX;
       int b_l = vector_b + offset_b;
-      *global_a = reinterpret_cast<fvec4*>(d_a) + a_k * stride_k + a_l;
-      *global_b = reinterpret_cast<fvec4*>(d_b) + b_l * stride_l + b_k;
+      *global_a = reinterpret_cast<fvec4*>(&d_a[(a_k * stride_k + a_l)*ItemsPerVectorX]);
+      *global_b = reinterpret_cast<fvec4*>(&d_b[(b_l * stride_l + b_k)*ItemsPerVectorX]);
     }
 
   inline __device__
@@ -75,9 +75,9 @@ namespace cutlass {
       int b_l = threadIdx.x / VectorsPerBlockK;
 #pragma unroll
       for (int i = 0; i < VectorsPerThreadX; ++i) {
-	*reinterpret_cast<fvec4*>(&block_a[a_k + i * ThreadsPerBlockK][a_l * ItemsPerVectorX]) = thread_a[i];
 #pragma unroll
 	for (int j = 0; j < ItemsPerVectorX; ++j) {
+	  block_a[a_k + i * ThreadsPerBlockK][a_l * ItemsPerVectorX + j] = thread_a[i].data[j];
 	  block_b[b_k * ItemsPerVectorX + j][b_l + i * ThreadsPerBlockL] = thread_b[i].data[j];
 	}
       }
@@ -105,12 +105,12 @@ namespace cutlass {
 				  fvec4 (&slice_b)[VectorsPerThreadX],
 				  int offset_y,
 				  int offset_x,
-				  int offset_k) {
+				  int k) {
     for (int i = 0; i < VectorsPerThreadX; ++i) {
-      slice_b[i] = *reinterpret_cast<const fvec4*>(&block_b[offset_k][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
+      slice_b[i] = *reinterpret_cast<const fvec4*>(&block_b[k][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
     }
     for (int i = 0; i < VectorsPerThreadY; ++i) {
-      slice_a[i] = *reinterpret_cast<const fvec4*>(&block_a[offset_k][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
+      slice_a[i] = *reinterpret_cast<const fvec4*>(&block_a[k][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
     }
   }
 
@@ -136,7 +136,7 @@ namespace cutlass {
     fvec4 *global_b;
     int stride_k;
     int stride_l;
-    fvec4 thread_a[VectorsPerThreadX];
+    fvec4 thread_a[VectorsPerThreadY];
     fvec4 thread_b[VectorsPerThreadX];
     __shared__ block_y_t block_a;
     __shared__ block_x_t block_b;
@@ -159,26 +159,26 @@ namespace cutlass {
 	     offset_x,
 	     0);
 #pragma unroll
-    for (int k = 0; k < dim_k; k += ItemsPerBlockK) {
+    for (int kk = 0; kk < dim_k; kk += ItemsPerBlockK) {
 #pragma unroll
-      for (int offset_k = 0; offset_k < ItemsPerBlockK; offset_k++) {
-	if ((offset_k == ItemsPerBlockK - 1) && k < dim_k-ItemsPerBlockK) {
+      for (int k = 0; k < ItemsPerBlockK; k++) {
+	if ((k == ItemsPerBlockK - 1) && kk < dim_k-ItemsPerBlockK) {
 	  __syncthreads();
 	  commit(block_a, thread_a, block_b, thread_b);
 	  __syncthreads();
 	}
-	if ((offset_k == 0) && dim_k-ItemsPerBlockK) {
+	if ((k == 0) && kk < dim_k-ItemsPerBlockK) {
 	  request(stride_k, &global_a, thread_a, stride_l, &global_b, thread_b);
 	}
 	prefetch(block_a,
 		 block_b,
-		 slice_a[(offset_k + 1) % 2],
-		 slice_b[(offset_k + 1) % 2],
+		 slice_a[(k + 1) % 2],
+		 slice_b[(k + 1) % 2],
 		 offset_y,
 		 offset_x,
-		 (offset_k + 1) % ItemsPerBlockK);
-	tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(slice_a[(offset_k) % 2]);
-	tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(slice_b[(offset_k) % 2]);
+		 (k + 1) % ItemsPerBlockK);
+	tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(slice_a[k % 2]);
+	tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(slice_b[k % 2]);
 #pragma unroll
 	for (int y = 0; y < ItemsPerThreadY; ++y) {
 #pragma unroll
