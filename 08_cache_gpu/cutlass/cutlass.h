@@ -60,8 +60,9 @@ namespace cutlass {
 
     float *global_a;
     float *global_b;
-    float __align__(16) thread_a[VectorsPerThreadX][ItemsPerVectorX];
-    float __align__(16) thread_b[VectorsPerThreadX][ItemsPerVectorX];
+    struct __align__(16) vec_t { float d[ItemsPerVectorX]; };
+    vec_t __align__(16) thread_a[VectorsPerThreadX];
+    vec_t __align__(16) thread_b[VectorsPerThreadX];
     __shared__ float __align__(16) block_a[ItemsPerBlockK][ItemsPerBlockX];
     __shared__ float __align__(16) block_b[ItemsPerBlockK][ItemsPerBlockX];
     float __align__(16) slice_a[2][VectorsPerThreadX][ItemsPerVectorX];
@@ -84,19 +85,15 @@ namespace cutlass {
     global_b = &d_b[(b_m * stride_l + b_k) * ItemsPerVectorX];
 #pragma unroll
     for (int i = 0; i < VectorsPerThreadX; ++i) {
-      for (int j = 0; j < ItemsPerVectorX; ++j) {
-        thread_a[i][j] = global_a[(i * ThreadsPerBlockK * stride_k) * ItemsPerVectorX + j];
-        thread_b[i][j] = global_b[(i * ThreadsPerBlockL * stride_l) * ItemsPerVectorX + j];
-      }
+      thread_a[i] = *reinterpret_cast<vec_t*>(&global_a[(i * ThreadsPerBlockK * stride_k) * ItemsPerVectorX]);
+      thread_b[i] = *reinterpret_cast<vec_t*>(&global_b[(i * ThreadsPerBlockL * stride_l) * ItemsPerVectorX]);
     }
-    int stride_a = (stride_k * ItemsPerBlockK);
-    int stride_b = VectorsPerBlockK;
 #pragma unroll
     for (int i = 0; i < VectorsPerThreadX; ++i) {
 #pragma unroll
       for (int j = 0; j < ItemsPerVectorX; ++j) {
-	block_a[a_k + i * ThreadsPerBlockK][a_l * ItemsPerVectorX + j] = thread_a[i][j];
-	block_b[b_k * ItemsPerVectorX + j][b_l + i * ThreadsPerBlockL] = thread_b[i][j];
+	block_a[a_k + i * ThreadsPerBlockK][a_l * ItemsPerVectorX + j] = thread_a[i].d[j];
+	block_b[b_k * ItemsPerVectorX + j][b_l + i * ThreadsPerBlockL] = thread_b[i].d[j];
       }
     }
     __syncthreads();
@@ -111,6 +108,8 @@ namespace cutlass {
         slice_b[0][i][j] = block_b[0][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX) + j];
       }
     }
+    int stride_a = (stride_k * ItemsPerBlockK);
+    int stride_b = VectorsPerBlockK;
 #pragma unroll
     for (int kk = 0; kk < dim_k; kk += ItemsPerBlockK) {
 #pragma unroll
@@ -121,8 +120,8 @@ namespace cutlass {
 	  for (int i = 0; i < VectorsPerThreadX; ++i) {
 #pragma unroll
 	    for (int j = 0; j < ItemsPerVectorX; ++j) {
-	      block_a[a_k + i * ThreadsPerBlockK][a_l * ItemsPerVectorX + j] = thread_a[i][j];
-	      block_b[b_k * ItemsPerVectorX + j][b_l + i * ThreadsPerBlockL] = thread_b[i][j];
+	      block_a[a_k + i * ThreadsPerBlockK][a_l * ItemsPerVectorX + j] = thread_a[i].d[j];
+	      block_b[b_k * ItemsPerVectorX + j][b_l + i * ThreadsPerBlockL] = thread_b[i].d[j];
 	    }
 	  }
 	  __syncthreads();
@@ -130,10 +129,8 @@ namespace cutlass {
 	if ((k == 0) && kk < dim_k-ItemsPerBlockK) {
 #pragma unroll
 	  for (int i = 0; i < VectorsPerThreadX; ++i) {
-	    for (int j = 0; j < ItemsPerVectorX; ++j) {
-	      thread_a[i][j] = global_a[(stride_a + i * ThreadsPerBlockK * stride_k) * ItemsPerVectorX + j];
-	      thread_b[i][j] = global_b[(stride_b + i * ThreadsPerBlockL * stride_l) * ItemsPerVectorX + j];
-	    }
+	    thread_a[i] = *reinterpret_cast<vec_t*>(&global_a[(stride_a + i * ThreadsPerBlockK * stride_k) * ItemsPerVectorX]);
+	    thread_b[i] = *reinterpret_cast<vec_t*>(&global_b[(stride_b + i * ThreadsPerBlockL * stride_l) * ItemsPerVectorX]);
 	  }
 	  stride_a += (stride_k * ItemsPerBlockK);
 	  stride_b += VectorsPerBlockK;
