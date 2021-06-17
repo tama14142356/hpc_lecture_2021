@@ -9,12 +9,12 @@ namespace cutlass {
     VectorsPerThread = 2,
     ItemsPerThread = VectorsPerThread * ItemsPerVector, // 8
 
-    ThreadsPerWarpY = 4,
-    ThreadsPerWarpX = 8,
+    ThreadsPerWarpY = 4, // #cols
+    ThreadsPerWarpX = 8, // #rows
     ThreadsPerWarp = ThreadsPerWarpX * ThreadsPerWarpY, // 32
 
-    WarpsPerBlockY = 2,
-    WarpsPerBlockX = 1,
+    WarpsPerBlockY = 2, // #cols
+    WarpsPerBlockX = 1, // #rows
     ThreadsPerBlock = 64,
 
     ItemsPerWarpY = ThreadsPerWarpY * ItemsPerThread, // 32
@@ -22,11 +22,10 @@ namespace cutlass {
     ItemsPerBlockX = WarpsPerBlockX * ItemsPerWarpX, // 64
 
     Ktile = 8,
-    VectorsPerKtile = Ktile / ItemsPerVector, // 2
-    VectorsPerMtile = ThreadsPerWarpX * VectorsPerThread, // 16
-
-    ThreadsPerKtile = ThreadsPerBlock / VectorsPerMtile, // 4
-    ThreadsPerNtile = ThreadsPerBlock / VectorsPerKtile // 32
+    VectorsPerMtile = ThreadsPerWarpX * VectorsPerThread, // 16 A #rows
+    ThreadsPerKtile = ThreadsPerBlock / VectorsPerMtile, // 4 A #cols
+    VectorsPerKtile = Ktile / ItemsPerVector, // 2 B #rows
+    ThreadsPerNtile = ThreadsPerBlock / VectorsPerKtile // 32 B #cols
   };
 
   inline __device__
