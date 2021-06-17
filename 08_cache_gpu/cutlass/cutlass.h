@@ -27,10 +27,6 @@ namespace cutlass {
     ThreadsPerBlockL = ThreadsPerBlock / VectorsPerBlockK // 32
   };
 
-  struct __align__(16) fvec4 { float data[4]; };
-  typedef float __align__(16) block_t[ItemsPerBlockK][ItemsPerBlockX];
-  typedef float __align__(16) tile_t[ItemsPerThreadX];
-
   inline __device__
     void store(float *ptr, const float &src) {
       asm volatile ("st.global.cg.f32 [%0], %1;\n"
@@ -61,48 +57,46 @@ namespace cutlass {
     int lane_y = lane_id % ThreadsPerWarpY;
     int offset_y = lane_y * ItemsPerVectorX + warp_y * ItemsPerWarpY;
     int offset_x = lane_x * ItemsPerVectorX + warp_x * ItemsPerWarpX;
-    float slice_a[2][VectorsPerThreadX][ItemsPerVectorX];
-    float slice_b[2][VectorsPerThreadX][ItemsPerVectorX];
-    float tile_c[ItemsPerThreadX][ItemsPerThreadX];
 
-    fvec4 *global_a;
-    fvec4 *global_b;
-    int stride_k;
-    int stride_l;
-    int stride_a = 0;
-    int stride_b = 0;
-    fvec4 thread_a[VectorsPerThreadX];
-    fvec4 thread_b[VectorsPerThreadX];
-    __shared__ block_t block_a;
-    __shared__ block_t block_b;
+    float *global_a;
+    float *global_b;
+    float __align__(16) thread_a[VectorsPerThreadX][ItemsPerVectorX];
+    float __align__(16) thread_b[VectorsPerThreadX][ItemsPerVectorX];
+    __shared__ float __align__(16) block_a[ItemsPerBlockK][ItemsPerBlockX];
+    __shared__ float __align__(16) block_b[ItemsPerBlockK][ItemsPerBlockX];
+    float __align__(16) slice_a[2][VectorsPerThreadX][ItemsPerVectorX];
+    float __align__(16) slice_b[2][VectorsPerThreadX][ItemsPerVectorX];
+    float __align__(16) tile_c[ItemsPerThreadX][ItemsPerThreadX];
 
     int offset_a = ItemsPerBlockX * blockIdx.x;
     int offset_b = ItemsPerBlockX * blockIdx.y;
-    stride_k = dim_m / ItemsPerVectorX;
-    stride_l = dim_k / ItemsPerVectorX;
+    int stride_k = dim_m / ItemsPerVectorX;
+    int stride_l = dim_k / ItemsPerVectorX;
     int vector_a = threadIdx.x % VectorsPerBlockX;
     int vector_b = threadIdx.x / VectorsPerBlockK;
     int a_k = threadIdx.x / VectorsPerBlockX;
     int b_k = threadIdx.x % VectorsPerBlockK;
-    int a_l = vector_a + offset_a / ItemsPerVectorX;
-    int b_l = vector_b + offset_b;
-    global_a = reinterpret_cast<fvec4*>(&d_a[(a_k * stride_k + a_l)*ItemsPerVectorX]);
-    global_b = reinterpret_cast<fvec4*>(&d_b[(b_l * stride_l + b_k)*ItemsPerVectorX]);
+    int a_l = threadIdx.x % VectorsPerBlockX;
+    int b_l = threadIdx.x / VectorsPerBlockK;
+    int a_m = vector_a + offset_a / ItemsPerVectorX;
+    int b_m = vector_b + offset_b;
+    global_a = &d_a[(a_k * stride_k + a_m) * ItemsPerVectorX];
+    global_b = &d_b[(b_m * stride_l + b_k) * ItemsPerVectorX];
 #pragma unroll
     for (int i = 0; i < VectorsPerThreadX; ++i) {
-      thread_a[i] = global_a[stride_a + i * ThreadsPerBlockK * stride_k];
-      thread_b[i] = global_b[stride_b + i * ThreadsPerBlockL * stride_l];
+      for (int j = 0; j < ItemsPerVectorX; ++j) {
+        thread_a[i][j] = global_a[(i * ThreadsPerBlockK * stride_k) * ItemsPerVectorX + j];
+        thread_b[i][j] = global_b[(i * ThreadsPerBlockL * stride_l) * ItemsPerVectorX + j];
+      }
     }
-    stride_a += (stride_k * ItemsPerBlockK);
-    stride_b += VectorsPerBlockK;
-    a_l = threadIdx.x % VectorsPerBlockX;
-    b_l = threadIdx.x / VectorsPerBlockK;
+    int stride_a = (stride_k * ItemsPerBlockK);
+    int stride_b = VectorsPerBlockK;
 #pragma unroll
     for (int i = 0; i < VectorsPerThreadX; ++i) {
 #pragma unroll
       for (int j = 0; j < ItemsPerVectorX; ++j) {
-	block_a[a_k + i * ThreadsPerBlockK][a_l * ItemsPerVectorX + j] = thread_a[i].data[j];
-	block_b[b_k * ItemsPerVectorX + j][b_l + i * ThreadsPerBlockL] = thread_b[i].data[j];
+	block_a[a_k + i * ThreadsPerBlockK][a_l * ItemsPerVectorX + j] = thread_a[i][j];
+	block_b[b_k * ItemsPerVectorX + j][b_l + i * ThreadsPerBlockL] = thread_b[i][j];
       }
     }
     __syncthreads();
@@ -123,16 +117,12 @@ namespace cutlass {
       for (int k = 0; k < ItemsPerBlockK; k++) {
 	if ((k == ItemsPerBlockK - 1) && kk < dim_k-ItemsPerBlockK) {
 	  __syncthreads();
-	  int a_k = threadIdx.x / VectorsPerBlockX;
-	  int a_l = threadIdx.x % VectorsPerBlockX;
-	  int b_k = threadIdx.x % VectorsPerBlockK;
-	  int b_l = threadIdx.x / VectorsPerBlockK;
 #pragma unroll
 	  for (int i = 0; i < VectorsPerThreadX; ++i) {
 #pragma unroll
 	    for (int j = 0; j < ItemsPerVectorX; ++j) {
-	      block_a[a_k + i * ThreadsPerBlockK][a_l * ItemsPerVectorX + j] = thread_a[i].data[j];
-	      block_b[b_k * ItemsPerVectorX + j][b_l + i * ThreadsPerBlockL] = thread_b[i].data[j];
+	      block_a[a_k + i * ThreadsPerBlockK][a_l * ItemsPerVectorX + j] = thread_a[i][j];
+	      block_b[b_k * ItemsPerVectorX + j][b_l + i * ThreadsPerBlockL] = thread_b[i][j];
 	    }
 	  }
 	  __syncthreads();
@@ -140,8 +130,10 @@ namespace cutlass {
 	if ((k == 0) && kk < dim_k-ItemsPerBlockK) {
 #pragma unroll
 	  for (int i = 0; i < VectorsPerThreadX; ++i) {
-	    thread_a[i] = global_a[stride_a + i * ThreadsPerBlockK * stride_k];
-	    thread_b[i] = global_b[stride_b + i * ThreadsPerBlockL * stride_l];
+	    for (int j = 0; j < ItemsPerVectorX; ++j) {
+	      thread_a[i][j] = global_a[(stride_a + i * ThreadsPerBlockK * stride_k) * ItemsPerVectorX + j];
+	      thread_b[i][j] = global_b[(stride_b + i * ThreadsPerBlockL * stride_l) * ItemsPerVectorX + j];
+	    }
 	  }
 	  stride_a += (stride_k * ItemsPerBlockK);
 	  stride_b += VectorsPerBlockK;
@@ -153,6 +145,7 @@ namespace cutlass {
 	    slice_b[(k + 1) % 2][i][j] = block_b[k1][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX) + j];
 	  }
 	}
+	typedef float __align__(16) tile_t[ItemsPerThreadX];
 	tile_t &tile_a = reinterpret_cast<tile_t&>(slice_a[k % 2]);
 	tile_t &tile_b = reinterpret_cast<tile_t&>(slice_b[k % 2]);
 #pragma unroll
