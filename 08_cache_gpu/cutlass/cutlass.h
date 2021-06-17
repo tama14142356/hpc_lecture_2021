@@ -69,6 +69,8 @@ namespace cutlass {
     fvec4 *global_b;
     int stride_k;
     int stride_l;
+    int stride_a = 0;
+    int stride_b = 0;
     fvec4 thread_a[VectorsPerThreadX];
     fvec4 thread_b[VectorsPerThreadX];
     __shared__ block_t block_a;
@@ -88,11 +90,11 @@ namespace cutlass {
     global_b = reinterpret_cast<fvec4*>(&d_b[(b_l * stride_l + b_k)*ItemsPerVectorX]);
 #pragma unroll
     for (int i = 0; i < VectorsPerThreadX; ++i) {
-      thread_a[i] = global_a[i * ThreadsPerBlockK * stride_k];
-      thread_b[i] = global_b[i * ThreadsPerBlockL * stride_l];
+      thread_a[i] = global_a[stride_a + i * ThreadsPerBlockK * stride_k];
+      thread_b[i] = global_b[stride_b + i * ThreadsPerBlockL * stride_l];
     }
-    global_a += (stride_k * ItemsPerBlockK);
-    global_b += VectorsPerBlockK;
+    stride_a += (stride_k * ItemsPerBlockK);
+    stride_b += VectorsPerBlockK;
     a_l = threadIdx.x % VectorsPerBlockX;
     b_l = threadIdx.x / VectorsPerBlockK;
 #pragma unroll
@@ -138,11 +140,11 @@ namespace cutlass {
 	if ((k == 0) && kk < dim_k-ItemsPerBlockK) {
 #pragma unroll
 	  for (int i = 0; i < VectorsPerThreadX; ++i) {
-	    thread_a[i] = global_a[i * ThreadsPerBlockK * stride_k];
-	    thread_b[i] = global_b[i * ThreadsPerBlockL * stride_l];
+	    thread_a[i] = global_a[stride_a + i * ThreadsPerBlockK * stride_k];
+	    thread_b[i] = global_b[stride_b + i * ThreadsPerBlockL * stride_l];
 	  }
-	  global_a += (stride_k * ItemsPerBlockK);
-	  global_b += VectorsPerBlockK;
+	  stride_a += (stride_k * ItemsPerBlockK);
+	  stride_b += VectorsPerBlockK;
 	}
 	int k1 = (k + 1) % ItemsPerBlockK;
 	for (int i = 0; i < VectorsPerThreadX; ++i) {
