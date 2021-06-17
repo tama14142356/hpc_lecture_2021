@@ -60,30 +60,30 @@ namespace cutlass {
     int offset_x = lane_x * ItemsPerVector + warp_x * ItemsPerWarpX;
 
     struct __align__(16) vec_t { float d[ItemsPerVector]; };
-    vec_t *global_a;
-    vec_t *global_b;
+    vec_t *tile_a;
+    vec_t *tile_b;
     vec_t __align__(16) thread_a[VectorsPerThread];
     vec_t __align__(16) thread_b[VectorsPerThread];
     __shared__ float __align__(16) block_a[Ktile][ItemsPerBlockX];
     __shared__ float __align__(16) block_b[Ktile][ItemsPerBlockX];
-    float __align__(16) slice_a[2][VectorsPerThread][ItemsPerVector];
-    float __align__(16) slice_b[2][VectorsPerThread][ItemsPerVector];
-    float __align__(16) tile_c[ItemsPerThread][ItemsPerThread];
+    float __align__(16) buffer_a[2][VectorsPerThread][ItemsPerVector];
+    float __align__(16) buffer_b[2][VectorsPerThread][ItemsPerVector];
+    float __align__(16) fragment_c[ItemsPerThread][ItemsPerThread];
 
-    int offset_m = ItemsPerBlockX * blockIdx.x / ItemsPerVector; // clear
-    int offset_n = ItemsPerBlockX * blockIdx.y; // clear
+    int offset_a_m = ItemsPerBlockX * blockIdx.x / ItemsPerVector; // clear
+    int offset_b_n = ItemsPerBlockX * blockIdx.y; // clear
     int lda = dim_m / ItemsPerVector; // clear
     int ldb = dim_k / ItemsPerVector; // clear
     int a_m = threadIdx.x % VectorsPerMtile; // 16
     int a_k = threadIdx.x / VectorsPerMtile; // 4
     int b_k = threadIdx.x % VectorsPerKtile; // 2
     int b_n = threadIdx.x / VectorsPerKtile; // 32
-    global_a = reinterpret_cast<vec_t*>(&d_a[(a_k * lda + (a_m + offset_m)) * ItemsPerVector]);
-    global_b = reinterpret_cast<vec_t*>(&d_b[((b_n + offset_n) * ldb + b_k) * ItemsPerVector]);
+    tile_a = reinterpret_cast<vec_t*>(&d_a[(a_k * lda + (a_m + offset_a_m)) * ItemsPerVector]);
+    tile_b = reinterpret_cast<vec_t*>(&d_b[((b_n + offset_b_n) * ldb + b_k) * ItemsPerVector]);
 #pragma unroll
     for (int i = 0; i < VectorsPerThread; ++i) {
-      thread_a[i] = global_a[i * ThreadsPerKtile * lda];
-      thread_b[i] = global_b[i * ThreadsPerNtile * ldb];
+      thread_a[i] = tile_a[i * ThreadsPerKtile * lda];
+      thread_b[i] = tile_b[i * ThreadsPerNtile * ldb];
     }
 #pragma unroll
     for (int i = 0; i < VectorsPerThread; ++i) {
@@ -98,11 +98,11 @@ namespace cutlass {
     for (int y = 0; y < ItemsPerThread; ++y)
 #pragma unroll
       for (int x = 0; x < ItemsPerThread; ++x)
-	tile_c[y][x] = float(0);
+	fragment_c[y][x] = float(0);
     for (int i = 0; i < VectorsPerThread; ++i) {
       for (int j = 0; j < ItemsPerVector; ++j) {
-        slice_a[0][i][j] = block_a[0][offset_y + (i * ThreadsPerWarpY * ItemsPerVector) + j];
-        slice_b[0][i][j] = block_b[0][offset_x + (i * ThreadsPerWarpX * ItemsPerVector) + j];
+        buffer_a[0][i][j] = block_a[0][offset_y + (i * ThreadsPerWarpY * ItemsPerVector) + j];
+        buffer_b[0][i][j] = block_b[0][offset_x + (i * ThreadsPerWarpX * ItemsPerVector) + j];
       }
     }
     int stride_a = lda * Ktile;
@@ -126,8 +126,8 @@ namespace cutlass {
 	if ((k == 0) && kk < dim_k-Ktile) {
 #pragma unroll
 	  for (int i = 0; i < VectorsPerThread; ++i) {
-	    thread_a[i] = global_a[stride_a + i * ThreadsPerKtile * lda];
-	    thread_b[i] = global_b[stride_b + i * ThreadsPerNtile * ldb];
+	    thread_a[i] = tile_a[stride_a + i * ThreadsPerKtile * lda];
+	    thread_b[i] = tile_b[stride_b + i * ThreadsPerNtile * ldb];
 	  }
 	  stride_a += lda * Ktile;
 	  stride_b += Ktile / ItemsPerVector;
@@ -135,18 +135,18 @@ namespace cutlass {
 	int k1 = (k + 1) % Ktile;
 	for (int i = 0; i < VectorsPerThread; ++i) {
 	  for (int j = 0; j < ItemsPerVector; ++j) {
-	    slice_a[(k + 1) % 2][i][j] = block_a[k1][offset_y + (i * ThreadsPerWarpY * ItemsPerVector) + j];
-	    slice_b[(k + 1) % 2][i][j] = block_b[k1][offset_x + (i * ThreadsPerWarpX * ItemsPerVector) + j];
+	    buffer_a[(k + 1) % 2][i][j] = block_a[k1][offset_y + (i * ThreadsPerWarpY * ItemsPerVector) + j];
+	    buffer_b[(k + 1) % 2][i][j] = block_b[k1][offset_x + (i * ThreadsPerWarpX * ItemsPerVector) + j];
 	  }
 	}
-	typedef float __align__(16) tile_t[ItemsPerThread];
-	tile_t &tile_a = reinterpret_cast<tile_t&>(slice_a[k % 2]);
-	tile_t &tile_b = reinterpret_cast<tile_t&>(slice_b[k % 2]);
+	typedef float __align__(16) fragment_t[ItemsPerThread];
+	fragment_t &fragment_a = reinterpret_cast<fragment_t&>(buffer_a[k % 2]);
+	fragment_t &fragment_b = reinterpret_cast<fragment_t&>(buffer_b[k % 2]);
 #pragma unroll
 	for (int y = 0; y < ItemsPerThread; ++y) {
 #pragma unroll
 	  for (int x = 0; x < ItemsPerThread; ++x) {
-	    gemm(tile_a[y], tile_b[x], tile_c[y][x]);
+	    gemm(fragment_a[y], fragment_b[x], fragment_c[y][x]);
 	  }
 	}
       }
@@ -164,7 +164,7 @@ namespace cutlass {
 #pragma unroll
 	for (int i = 0; i < ItemsPerVector; ++i) {
 	  if (bx < dim_n && (by + i) < dim_m) {
-	    store(d_c + bx * dim_m + by + i, tile_c[iy + i][ix]);
+	    store(d_c + bx * dim_m + by + i, fragment_c[iy + i][ix]);
 	  }
 	}
       }
