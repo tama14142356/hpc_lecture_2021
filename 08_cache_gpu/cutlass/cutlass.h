@@ -40,50 +40,6 @@ namespace cutlass {
   typedef float tile_b_t[ItemsPerThreadX];
 
   inline __device__
-    void init(float *d_a, int dim_m, int offset_a, int &stride_k, fvec4 **global_a,
-              float *d_b, int dim_k, int offset_b, int &stride_l, fvec4 **global_b) {
-      stride_k = dim_m / ItemsPerVectorX;
-      stride_l = dim_k / ItemsPerVectorX;
-      int vector_a = threadIdx.x % VectorsPerBlockX;
-      int vector_b = threadIdx.x / VectorsPerBlockK;
-      int a_k = threadIdx.x / VectorsPerBlockX;
-      int b_k = threadIdx.x % VectorsPerBlockK;
-      int a_l = vector_a + offset_a / ItemsPerVectorX;
-      int b_l = vector_b + offset_b;
-      *global_a = reinterpret_cast<fvec4*>(&d_a[(a_k * stride_k + a_l)*ItemsPerVectorX]);
-      *global_b = reinterpret_cast<fvec4*>(&d_b[(b_l * stride_l + b_k)*ItemsPerVectorX]);
-    }
-
-  inline __device__
-    void request(int stride_k, fvec4 **global_a, fvec4 thread_a[VectorsPerThreadX],
-                 int stride_l, fvec4 **global_b, fvec4 thread_b[VectorsPerThreadX]) {
-#pragma unroll
-      for (int i = 0; i < VectorsPerThreadX; ++i) {
-	thread_a[i] = (*global_a)[i * ThreadsPerBlockK * stride_k];
-	thread_b[i] = (*global_b)[i * ThreadsPerBlockL * stride_l];
-      }
-      *global_a += (stride_k * ItemsPerBlockK);
-      *global_b += VectorsPerBlockK;
-    }
-
-  inline __device__
-    void commit(block_y_t (&block_a), fvec4 thread_a[VectorsPerThreadX],
-                block_x_t (&block_b), fvec4 thread_b[VectorsPerThreadX]) {
-      int a_k = threadIdx.x / VectorsPerBlockX;
-      int a_l = threadIdx.x % VectorsPerBlockX;
-      int b_k = threadIdx.x % VectorsPerBlockK;
-      int b_l = threadIdx.x / VectorsPerBlockK;
-#pragma unroll
-      for (int i = 0; i < VectorsPerThreadX; ++i) {
-#pragma unroll
-	for (int j = 0; j < ItemsPerVectorX; ++j) {
-	  block_a[a_k + i * ThreadsPerBlockK][a_l * ItemsPerVectorX + j] = thread_a[i].data[j];
-	  block_b[b_k * ItemsPerVectorX + j][b_l + i * ThreadsPerBlockL] = thread_b[i].data[j];
-	}
-      }
-    }
-
-  inline __device__
     void store(float *ptr, const float &src) {
       asm volatile ("st.global.cg.f32 [%0], %1;\n"
 		    : :
@@ -141,10 +97,35 @@ namespace cutlass {
     __shared__ block_y_t block_a;
     __shared__ block_x_t block_b;
 
-    init(d_a, dim_m, ItemsPerBlockY * blockIdx.x, stride_k, &global_a,
-         d_b, dim_k, ItemsPerBlockX * blockIdx.y, stride_l, &global_b);
-    request(stride_k, &global_a, thread_a, stride_l, &global_b, thread_b);
-    commit(block_a, thread_a, block_b, thread_b);
+    int offset_a = ItemsPerBlockY * blockIdx.x;
+    int offset_b = ItemsPerBlockX * blockIdx.y;
+    stride_k = dim_m / ItemsPerVectorX;
+    stride_l = dim_k / ItemsPerVectorX;
+    int vector_a = threadIdx.x % VectorsPerBlockX;
+    int vector_b = threadIdx.x / VectorsPerBlockK;
+    int a_k = threadIdx.x / VectorsPerBlockX;
+    int b_k = threadIdx.x % VectorsPerBlockK;
+    int a_l = vector_a + offset_a / ItemsPerVectorX;
+    int b_l = vector_b + offset_b;
+    global_a = reinterpret_cast<fvec4*>(&d_a[(a_k * stride_k + a_l)*ItemsPerVectorX]);
+    global_b = reinterpret_cast<fvec4*>(&d_b[(b_l * stride_l + b_k)*ItemsPerVectorX]);
+#pragma unroll
+    for (int i = 0; i < VectorsPerThreadX; ++i) {
+      thread_a[i] = global_a[i * ThreadsPerBlockK * stride_k];
+      thread_b[i] = global_b[i * ThreadsPerBlockL * stride_l];
+    }
+    global_a += (stride_k * ItemsPerBlockK);
+    global_b += VectorsPerBlockK;
+    a_l = threadIdx.x % VectorsPerBlockX;
+    b_l = threadIdx.x / VectorsPerBlockK;
+#pragma unroll
+    for (int i = 0; i < VectorsPerThreadX; ++i) {
+#pragma unroll
+      for (int j = 0; j < ItemsPerVectorX; ++j) {
+	block_a[a_k + i * ThreadsPerBlockK][a_l * ItemsPerVectorX + j] = thread_a[i].data[j];
+	block_b[b_k * ItemsPerVectorX + j][b_l + i * ThreadsPerBlockL] = thread_b[i].data[j];
+      }
+    }
     __syncthreads();
 #pragma unroll
     for (int y = 0; y < ItemsPerThreadY; ++y)
@@ -164,11 +145,28 @@ namespace cutlass {
       for (int k = 0; k < ItemsPerBlockK; k++) {
 	if ((k == ItemsPerBlockK - 1) && kk < dim_k-ItemsPerBlockK) {
 	  __syncthreads();
-	  commit(block_a, thread_a, block_b, thread_b);
+	  int a_k = threadIdx.x / VectorsPerBlockX;
+	  int a_l = threadIdx.x % VectorsPerBlockX;
+	  int b_k = threadIdx.x % VectorsPerBlockK;
+	  int b_l = threadIdx.x / VectorsPerBlockK;
+#pragma unroll
+	  for (int i = 0; i < VectorsPerThreadX; ++i) {
+#pragma unroll
+	    for (int j = 0; j < ItemsPerVectorX; ++j) {
+	      block_a[a_k + i * ThreadsPerBlockK][a_l * ItemsPerVectorX + j] = thread_a[i].data[j];
+	      block_b[b_k * ItemsPerVectorX + j][b_l + i * ThreadsPerBlockL] = thread_b[i].data[j];
+	    }
+	  }
 	  __syncthreads();
 	}
 	if ((k == 0) && kk < dim_k-ItemsPerBlockK) {
-	  request(stride_k, &global_a, thread_a, stride_l, &global_b, thread_b);
+#pragma unroll
+	  for (int i = 0; i < VectorsPerThreadX; ++i) {
+	    thread_a[i] = global_a[i * ThreadsPerBlockK * stride_k];
+	    thread_b[i] = global_b[i * ThreadsPerBlockL * stride_l];
+	  }
+	  global_a += (stride_k * ItemsPerBlockK);
+	  global_b += VectorsPerBlockK;
 	}
 	prefetch(block_a,
 		 block_b,
