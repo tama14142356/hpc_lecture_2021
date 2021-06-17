@@ -5,21 +5,17 @@
 namespace cutlass {
   enum
   {
-    ItemsPerVectorY = 4,
     ItemsPerVectorX = 4,
-    ItemsPerVector = ItemsPerVectorX * ItemsPerVectorY, // 16
-    VectorsPerThreadY = 2,
+    ItemsPerVector = ItemsPerVectorX * ItemsPerVectorX, // 16
     VectorsPerThreadX = 2,
     ThreadsPerWarpY = 4,
     ThreadsPerWarpX = 8,
     ThreadsPerWarp = ThreadsPerWarpX * ThreadsPerWarpY, // 32
     WarpsPerBlockY = 2,
     WarpsPerBlockX = 1,
-    ItemsPerThreadY = VectorsPerThreadY * ItemsPerVectorY, // 8
     ItemsPerThreadX = VectorsPerThreadX * ItemsPerVectorX, // 8
-    ItemsPerWarpY = ThreadsPerWarpY * ItemsPerThreadY, // 32
+    ItemsPerWarpY = ThreadsPerWarpY * ItemsPerThreadX, // 32
     ItemsPerWarpX = ThreadsPerWarpX * ItemsPerThreadX, // 64
-    ItemsPerBlockY = WarpsPerBlockY * ItemsPerWarpY, // 64
     ItemsPerBlockX = WarpsPerBlockX * ItemsPerWarpX, // 64
     ItemsPerBlockK = 8,
     ThreadsPerBlock = ThreadsPerWarp * WarpsPerBlockY * WarpsPerBlockX, // 64
@@ -32,12 +28,8 @@ namespace cutlass {
   };
 
   struct __align__(16) fvec4 { float data[4]; };
-
-  typedef float __align__(16) block_y_t[ItemsPerBlockK][ItemsPerBlockY];
-  typedef float __align__(16) block_x_t[ItemsPerBlockK][ItemsPerBlockX];
-
-  typedef float tile_a_t[ItemsPerThreadY];
-  typedef float tile_b_t[ItemsPerThreadX];
+  typedef float __align__(16) block_t[ItemsPerBlockK][ItemsPerBlockX];
+  typedef float tile_t[ItemsPerThreadX];
 
   inline __device__
     void store(float *ptr, const float &src) {
@@ -67,22 +59,22 @@ namespace cutlass {
     int lane_id = threadIdx.x % ThreadsPerWarp;
     int lane_x = lane_id / ThreadsPerWarpY;
     int lane_y = lane_id % ThreadsPerWarpY;
-    int offset_y = lane_y * ItemsPerVectorY + warp_y * ItemsPerWarpY;
+    int offset_y = lane_y * ItemsPerVectorX + warp_y * ItemsPerWarpY;
     int offset_x = lane_x * ItemsPerVectorX + warp_x * ItemsPerWarpX;
-    fvec4 slice_a[2][VectorsPerThreadY];
+    fvec4 slice_a[2][VectorsPerThreadX];
     fvec4 slice_b[2][VectorsPerThreadX];
-    float tile_c[ItemsPerThreadY][ItemsPerThreadX];
+    float tile_c[ItemsPerThreadX][ItemsPerThreadX];
 
     fvec4 *global_a;
     fvec4 *global_b;
     int stride_k;
     int stride_l;
-    fvec4 thread_a[VectorsPerThreadY];
+    fvec4 thread_a[VectorsPerThreadX];
     fvec4 thread_b[VectorsPerThreadX];
-    __shared__ block_y_t block_a;
-    __shared__ block_x_t block_b;
+    __shared__ block_t block_a;
+    __shared__ block_t block_b;
 
-    int offset_a = ItemsPerBlockY * blockIdx.x;
+    int offset_a = ItemsPerBlockX * blockIdx.x;
     int offset_b = ItemsPerBlockX * blockIdx.y;
     stride_k = dim_m / ItemsPerVectorX;
     stride_l = dim_k / ItemsPerVectorX;
@@ -113,15 +105,15 @@ namespace cutlass {
     }
     __syncthreads();
 #pragma unroll
-    for (int y = 0; y < ItemsPerThreadY; ++y)
+    for (int y = 0; y < ItemsPerThreadX; ++y)
 #pragma unroll
       for (int x = 0; x < ItemsPerThreadX; ++x)
 	tile_c[y][x] = float(0);
     for (int i = 0; i < VectorsPerThreadX; ++i) {
       slice_b[0][i] = *reinterpret_cast<const fvec4*>(&block_b[0][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
     }
-    for (int i = 0; i < VectorsPerThreadY; ++i) {
-      slice_a[0][i] = *reinterpret_cast<const fvec4*>(&block_a[0][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
+    for (int i = 0; i < VectorsPerThreadX; ++i) {
+      slice_a[0][i] = *reinterpret_cast<const fvec4*>(&block_a[0][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorX)]);
     }
 #pragma unroll
     for (int kk = 0; kk < dim_k; kk += ItemsPerBlockK) {
@@ -156,13 +148,13 @@ namespace cutlass {
 	for (int i = 0; i < VectorsPerThreadX; ++i) {
 	  slice_b[(k + 1) % 2][i] = *reinterpret_cast<const fvec4*>(&block_b[k1][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
 	}
-	for (int i = 0; i < VectorsPerThreadY; ++i) {
-	  slice_a[(k + 1) % 2][i] = *reinterpret_cast<const fvec4*>(&block_a[k1][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
+	for (int i = 0; i < VectorsPerThreadX; ++i) {
+	  slice_a[(k + 1) % 2][i] = *reinterpret_cast<const fvec4*>(&block_a[k1][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorX)]);
 	}
-	tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(slice_a[k % 2]);
-	tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(slice_b[k % 2]);
+	tile_t &tile_a = reinterpret_cast<tile_t&>(slice_a[k % 2]);
+	tile_t &tile_b = reinterpret_cast<tile_t&>(slice_b[k % 2]);
 #pragma unroll
-	for (int y = 0; y < ItemsPerThreadY; ++y) {
+	for (int y = 0; y < ItemsPerThreadX; ++y) {
 #pragma unroll
 	  for (int x = 0; x < ItemsPerThreadX; ++x) {
 	    gemm(tile_a[y], tile_b[x], tile_c[y][x]);
@@ -173,15 +165,15 @@ namespace cutlass {
 #pragma unroll
     for (int ix = 0; ix < ItemsPerThreadX; ++ix) {
 #pragma unroll
-      for (int iy = 0; iy < ItemsPerThreadY; iy += ItemsPerVectorY) {
+      for (int iy = 0; iy < ItemsPerThreadX; iy += ItemsPerVectorX) {
 	int vx = ix / ItemsPerVectorX;
-	int vy = iy / ItemsPerVectorY;
+	int vy = iy / ItemsPerVectorX;
 	int tx = offset_x + (vx * ThreadsPerWarpX * ItemsPerVectorX) + (ix % ItemsPerVectorX);
-	int ty = offset_y + (vy * ThreadsPerWarpY * ItemsPerVectorY) + (iy % ItemsPerVectorY);
+	int ty = offset_y + (vy * ThreadsPerWarpY * ItemsPerVectorX) + (iy % ItemsPerVectorX);
 	int bx = ItemsPerBlockX * blockIdx.y + tx;
-	int by = ItemsPerBlockY * blockIdx.x + ty;
+	int by = ItemsPerBlockX * blockIdx.x + ty;
 #pragma unroll
-	for (int i = 0; i < ItemsPerVectorY; ++i) {
+	for (int i = 0; i < ItemsPerVectorX; ++i) {
 	  if (bx < dim_n && (by + i) < dim_m) {
 	    store(d_c + bx * dim_m + by + i, tile_c[iy + i][ix]);
 	  }
