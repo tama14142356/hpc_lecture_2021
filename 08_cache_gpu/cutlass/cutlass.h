@@ -29,7 +29,7 @@ namespace cutlass {
 
   struct __align__(16) fvec4 { float data[4]; };
   typedef float __align__(16) block_t[ItemsPerBlockK][ItemsPerBlockX];
-  typedef float tile_t[ItemsPerThreadX];
+  typedef float __align__(16) tile_t[ItemsPerThreadX];
 
   inline __device__
     void store(float *ptr, const float &src) {
