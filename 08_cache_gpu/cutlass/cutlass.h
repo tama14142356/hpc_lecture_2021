@@ -55,21 +55,6 @@ namespace cutlass {
 		     : "=f"(c) : "f"(a), "f"(b), "f"(c));
     }
 
-  inline __device__ void prefetch(block_y_t &block_a,
-				  block_x_t &block_b,
-				  fvec4 (&slice_a)[VectorsPerThreadY],
-				  fvec4 (&slice_b)[VectorsPerThreadX],
-				  int offset_y,
-				  int offset_x,
-				  int k) {
-    for (int i = 0; i < VectorsPerThreadX; ++i) {
-      slice_b[i] = *reinterpret_cast<const fvec4*>(&block_b[k][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
-    }
-    for (int i = 0; i < VectorsPerThreadY; ++i) {
-      slice_a[i] = *reinterpret_cast<const fvec4*>(&block_a[k][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
-    }
-  }
-
   __global__ void kernel(int dim_m,
 			 int dim_n,
 			 int dim_k,
@@ -132,13 +117,12 @@ namespace cutlass {
 #pragma unroll
       for (int x = 0; x < ItemsPerThreadX; ++x)
 	tile_c[y][x] = float(0);
-    prefetch(block_a,
-	     block_b,
-	     slice_a[0],
-	     slice_b[0],
-	     offset_y,
-	     offset_x,
-	     0);
+    for (int i = 0; i < VectorsPerThreadX; ++i) {
+      slice_b[0][i] = *reinterpret_cast<const fvec4*>(&block_b[0][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
+    }
+    for (int i = 0; i < VectorsPerThreadY; ++i) {
+      slice_a[0][i] = *reinterpret_cast<const fvec4*>(&block_a[0][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
+    }
 #pragma unroll
     for (int kk = 0; kk < dim_k; kk += ItemsPerBlockK) {
 #pragma unroll
@@ -168,13 +152,13 @@ namespace cutlass {
 	  global_a += (stride_k * ItemsPerBlockK);
 	  global_b += VectorsPerBlockK;
 	}
-	prefetch(block_a,
-		 block_b,
-		 slice_a[(k + 1) % 2],
-		 slice_b[(k + 1) % 2],
-		 offset_y,
-		 offset_x,
-		 (k + 1) % ItemsPerBlockK);
+	int k1 = (k + 1) % ItemsPerBlockK;
+	for (int i = 0; i < VectorsPerThreadX; ++i) {
+	  slice_b[(k + 1) % 2][i] = *reinterpret_cast<const fvec4*>(&block_b[k1][offset_x + (i * ThreadsPerWarpX * ItemsPerVectorX)]);
+	}
+	for (int i = 0; i < VectorsPerThreadY; ++i) {
+	  slice_a[(k + 1) % 2][i] = *reinterpret_cast<const fvec4*>(&block_a[k1][offset_y + (i * ThreadsPerWarpY * ItemsPerVectorY)]);
+	}
 	tile_a_t &tile_a = reinterpret_cast<tile_a_t&>(slice_a[k % 2]);
 	tile_b_t &tile_b = reinterpret_cast<tile_b_t&>(slice_b[k % 2]);
 #pragma unroll
