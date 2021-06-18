@@ -66,8 +66,6 @@ namespace cutlass {
     vec_t __align__(16) thread_b[VectorsPerThread];
     __shared__ float __align__(16) block_a[Ktile][ItemsPerBlockX];
     __shared__ float __align__(16) block_b[Ktile][ItemsPerBlockX];
-    float __align__(16) buffer_a[2][VectorsPerThread][ItemsPerVector];
-    float __align__(16) buffer_b[2][VectorsPerThread][ItemsPerVector];
     float __align__(16) fragment_c[ItemsPerThread][ItemsPerThread];
 
     int offset_a_m = ItemsPerBlockX * blockIdx.x / ItemsPerVector;
@@ -80,28 +78,11 @@ namespace cutlass {
     int b_n = threadIdx.x / VectorsPerKtile; // 32
     tile_a = reinterpret_cast<vec_t*>(&d_a[(a_k * lda + (a_m + offset_a_m)) * ItemsPerVector]);
     tile_b = reinterpret_cast<vec_t*>(&d_b[((b_n + offset_b_n) * ldb + b_k) * ItemsPerVector]);
-    for (int i = 0; i < VectorsPerThread; ++i) {
-      thread_a[i] = tile_a[i * ThreadsPerKtile * lda];
-      thread_b[i] = tile_b[i * ThreadsPerNtile * ldb];
-    }
-    for (int i = 0; i < VectorsPerThread; ++i) {
-      for (int j = 0; j < ItemsPerVector; ++j) {
-	block_a[a_k + i * ThreadsPerKtile][a_m * ItemsPerVector + j] = thread_a[i].d[j];
-	block_b[b_k * ItemsPerVector + j][b_n + i * ThreadsPerNtile] = thread_b[i].d[j];
-      }
-    }
-    __syncthreads();
     for (int y = 0; y < ItemsPerThread; ++y)
       for (int x = 0; x < ItemsPerThread; ++x)
 	fragment_c[y][x] = float(0);
-    for (int i = 0; i < VectorsPerThread; ++i) {
-      for (int j = 0; j < ItemsPerVector; ++j) {
-        buffer_a[0][i][j] = block_a[0][offset_y + (i * ThreadsPerWarpY * ItemsPerVector) + j];
-        buffer_b[0][i][j] = block_b[0][offset_x + (i * ThreadsPerWarpX * ItemsPerVector) + j];
-      }
-    }
-    int stride_a = lda * Ktile;
-    int stride_b = Ktile / ItemsPerVector;
+    int stride_a = 0;
+    int stride_b = 0;
     for (int kk = 0; kk < dim_k; kk += Ktile) {
       for (int i = 0; i < VectorsPerThread; ++i) {
 	thread_a[i] = tile_a[stride_a + i * ThreadsPerKtile * lda];
@@ -109,28 +90,24 @@ namespace cutlass {
       }
       stride_a += lda * Ktile;
       stride_b += Ktile / ItemsPerVector;
+      __syncthreads();
+      for (int i = 0; i < VectorsPerThread; ++i) {
+	for (int j = 0; j < ItemsPerVector; ++j) {
+	  block_a[a_k + i * ThreadsPerKtile][a_m * ItemsPerVector + j] = thread_a[i].d[j];
+	  block_b[b_k * ItemsPerVector + j][b_n + i * ThreadsPerNtile] = thread_b[i].d[j];
+	}
+      }
+      __syncthreads();
 #pragma unroll
       for (int k = 0; k < Ktile; k++) {
-	if ((k == Ktile - 1) && kk < dim_k-Ktile) {
-	  __syncthreads();
-	  for (int i = 0; i < VectorsPerThread; ++i) {
-	    for (int j = 0; j < ItemsPerVector; ++j) {
-	      block_a[a_k + i * ThreadsPerKtile][a_m * ItemsPerVector + j] = thread_a[i].d[j];
-	      block_b[b_k * ItemsPerVector + j][b_n + i * ThreadsPerNtile] = thread_b[i].d[j];
-	    }
-	  }
-	  __syncthreads();
-	}
-	int k1 = (k + 1) % Ktile;
+	float __align__(16) fragment_a[ItemsPerThread];
+	float __align__(16) fragment_b[ItemsPerThread];
 	for (int i = 0; i < VectorsPerThread; ++i) {
 	  for (int j = 0; j < ItemsPerVector; ++j) {
-	    buffer_a[(k + 1) % 2][i][j] = block_a[k1][offset_y + (i * ThreadsPerWarpY * ItemsPerVector) + j];
-	    buffer_b[(k + 1) % 2][i][j] = block_b[k1][offset_x + (i * ThreadsPerWarpX * ItemsPerVector) + j];
+	    fragment_a[i * ItemsPerVector + j] = block_a[k][offset_y + (i * ThreadsPerWarpY * ItemsPerVector) + j];
+	    fragment_b[i * ItemsPerVector + j] = block_b[k][offset_x + (i * ThreadsPerWarpX * ItemsPerVector) + j];
 	  }
 	}
-	typedef float __align__(16) fragment_t[ItemsPerThread];
-	fragment_t &fragment_a = reinterpret_cast<fragment_t&>(buffer_a[k % 2]);
-	fragment_t &fragment_b = reinterpret_cast<fragment_t&>(buffer_b[k % 2]);
 	for (int m = 0; m < ItemsPerThread; ++m) {
 	  for (int n = 0; n < ItemsPerThread; ++n) {
 	    gemm(fragment_a[m], fragment_b[n], fragment_c[m][n]);
