@@ -103,16 +103,14 @@ namespace cutlass {
     int stride_a = lda * Ktile;
     int stride_b = Ktile / ItemsPerVector;
     for (int kk = 0; kk < dim_k; kk += Ktile) {
+      for (int i = 0; i < VectorsPerThread; ++i) {
+	thread_a[i] = tile_a[stride_a + i * ThreadsPerKtile * lda];
+	thread_b[i] = tile_b[stride_b + i * ThreadsPerNtile * ldb];
+      }
+      stride_a += lda * Ktile;
+      stride_b += Ktile / ItemsPerVector;
 #pragma unroll
       for (int k = 0; k < Ktile; k++) {
-	if ((k == 0) && kk < dim_k-Ktile) {
-	  for (int i = 0; i < VectorsPerThread; ++i) {
-	    thread_a[i] = tile_a[stride_a + i * ThreadsPerKtile * lda];
-	    thread_b[i] = tile_b[stride_b + i * ThreadsPerNtile * ldb];
-	  }
-	  stride_a += lda * Ktile;
-	  stride_b += Ktile / ItemsPerVector;
-	}
 	if ((k == Ktile - 1) && kk < dim_k-Ktile) {
 	  __syncthreads();
 	  for (int i = 0; i < VectorsPerThread; ++i) {
