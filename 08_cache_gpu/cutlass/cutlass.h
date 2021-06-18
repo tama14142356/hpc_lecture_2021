@@ -70,10 +70,10 @@ namespace cutlass {
     float __align__(16) buffer_b[2][VectorsPerThread][ItemsPerVector];
     float __align__(16) fragment_c[ItemsPerThread][ItemsPerThread];
 
-    int offset_a_m = ItemsPerBlockX * blockIdx.x / ItemsPerVector; // clear
-    int offset_b_n = ItemsPerBlockX * blockIdx.y; // clear
-    int lda = dim_m / ItemsPerVector; // clear
-    int ldb = dim_k / ItemsPerVector; // clear
+    int offset_a_m = ItemsPerBlockX * blockIdx.x / ItemsPerVector;
+    int offset_b_n = ItemsPerBlockX * blockIdx.y;
+    int lda = dim_m / ItemsPerVector;
+    int ldb = dim_k / ItemsPerVector;
     int a_m = threadIdx.x % VectorsPerMtile; // 16
     int a_k = threadIdx.x / VectorsPerMtile; // 4
     int b_k = threadIdx.x % VectorsPerKtile; // 2
@@ -143,10 +143,10 @@ namespace cutlass {
 	fragment_t &fragment_a = reinterpret_cast<fragment_t&>(buffer_a[k % 2]);
 	fragment_t &fragment_b = reinterpret_cast<fragment_t&>(buffer_b[k % 2]);
 #pragma unroll
-	for (int y = 0; y < ItemsPerThread; ++y) {
+	for (int m = 0; m < ItemsPerThread; ++m) {
 #pragma unroll
-	  for (int x = 0; x < ItemsPerThread; ++x) {
-	    gemm(fragment_a[y], fragment_b[x], fragment_c[y][x]);
+	  for (int n = 0; n < ItemsPerThread; ++n) {
+	    gemm(fragment_a[m], fragment_b[n], fragment_c[m][n]);
 	  }
 	}
       }
