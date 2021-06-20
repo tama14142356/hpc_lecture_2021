@@ -9,6 +9,7 @@ using namespace std;
 
 int main(int argc, char **argv) {
   int N = 2048;
+  int Nt = 10;
   int size = N * N * sizeof(float);
   float *A, *B, *C;
   cudaMallocManaged(&A, size);
@@ -24,17 +25,17 @@ int main(int argc, char **argv) {
   float alpha = 1.0;
   float beta = 0.0;
   cublasHandle_t handle;
-  cublasStatus_t stat = cublasCreate(&handle);
-  stat = cublasSetMatrix(N, N, sizeof(*A), A, N, A, N);
-  stat = cublasSetMatrix(N, N, sizeof(*B), B, N, B, N);
-  stat = cublasSetMatrix(N, N, sizeof(*C), C, N, C, N);
+  cublasCreate(&handle);
   auto tic = chrono::steady_clock::now();
-  stat = cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N, N, N,
-                     &alpha, B, N, A, N, &beta, C, N);
+  for (int i = 0; i < Nt+2; i++) {
+    if (i == 2) tic = chrono::steady_clock::now();
+    cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N, N, N,
+		&alpha, B, N, A, N, &beta, C, N);
+  }
   cudaDeviceSynchronize();
   auto toc = chrono::steady_clock::now();
-  stat = cublasGetMatrix(N, N, sizeof(*C), C, N, C, N);
-  double time = chrono::duration<double>(toc - tic).count();
+  cublasGetMatrix(N, N, sizeof(*C), C, N, C, N);
+  double time = chrono::duration<double>(toc - tic).count() / Nt;
   printf("N=%d: %lf s (%lf GFlops)\n",N,time,2.*N*N*N/time/1e9);
 #pragma omp parallel for
   for (int i=0; i<N; i++)
