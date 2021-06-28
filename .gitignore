@@ -1,7 +1,6 @@
-*.o
+.tags
+.python-version
+data
+runs
 *.out
-*.python-version
-.ipynb_checkpoints/
-compile_commands.json
-output/
-out/
+*.swp
