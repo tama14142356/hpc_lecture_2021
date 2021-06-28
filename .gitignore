@@ -3,4 +3,9 @@
 data
 runs
 *.out
-*.swp
+*.python-version
+.ipynb_checkpoints/
+compile_commands.json
+output/
+out/
+data/

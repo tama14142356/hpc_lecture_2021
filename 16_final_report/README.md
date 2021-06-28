@@ -1,4 +1,9 @@
 # final report 
+## for cpu
+answer.cpp
+## for gpu
+my_cuda_mpi.cu
+
 ### TSUBAME setup
 #### Interactive node
 qrsh -g tga-hpc-lecture -l f_node=1 -l h_rt=0:50:00 -ar 予約番号  
@@ -14,6 +19,6 @@ qdel ジョブID
 echo '' >> ~/.bashrc  
 echo '# Modules' >> ~/.bashrc  
 echo 'source /etc/profile.d/modules.sh' >> ~/.bashrc  
-echo 'module load gcc intel-mpi' >> ~/.bashrc  
+echo 'module load vim cmake gcc cuda/11.2.146 openmpi nccl cudnn intel' >> ~/.bashrc  
 source ~/.bashrc
 
