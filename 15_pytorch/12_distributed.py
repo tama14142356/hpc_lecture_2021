@@ -19,6 +19,9 @@ print('rank {}: {}'.format(rank, x))
 print('rank {}: {}'.format(rank, output))
 # dist.broadcast(x, src=0)
 dist.all_gather(output, x)
+# nccl not supported gather func
+# if rank == 0:
+#     dist.gather(x, gather_list=output, dst=0)
 print('rank {}: {}'.format(rank, x))
 print('rank {}: {}'.format(rank, output))
 dist.destroy_process_group()
