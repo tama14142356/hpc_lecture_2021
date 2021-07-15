@@ -6,6 +6,7 @@ from torchvision import datasets, transforms
 from torch.utils.tensorboard import SummaryWriter
 import time
 
+
 class CNN(nn.Module):
     def __init__(self):
         super(CNN, self).__init__()
@@ -31,13 +32,14 @@ class CNN(nn.Module):
         output = F.log_softmax(x, dim=1)
         return output
 
-def train(train_loader,model,criterion,optimizer,epoch,device):
+
+def train(train_loader, model, criterion, optimizer, epoch, device):
     model.train()
     t = time.perf_counter()
     with torch.profiler.profile(
-        schedule=torch.profiler.schedule(wait=1, warmup=1, active=8),
-        on_trace_ready=torch.profiler.tensorboard_trace_handler("./log"),
-        record_shapes=True) as prof:
+            schedule=torch.profiler.schedule(wait=1, warmup=1, active=8),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler("./log"),
+            record_shapes=True) as prof:
         for batch_idx, (data, target) in enumerate(train_loader):
             data = data.to(device)
             target = target.to(device)
@@ -47,15 +49,16 @@ def train(train_loader,model,criterion,optimizer,epoch,device):
             loss.backward()
             optimizer.step()
             prof.step()
-            print('Train Epoch: {} [{:>5}/{} ({:.0%})]\tLoss: {:.6f}\t Time:{:.4f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                batch_idx / len(train_loader), loss.data.item(),
-                time.perf_counter() - t))
+            print('Train Epoch: {} [{:>5}/{} ({:.0%})]\tLoss: {:.6f}\t Time:{:.4f}'.
+                  format(epoch, batch_idx * len(data), len(train_loader.dataset),
+                         batch_idx / len(train_loader), loss.data.item(),
+                         time.perf_counter() - t))
             t = time.perf_counter()
             if batch_idx > 10:
                 break
 
-def validate(val_loader,model,criterion,device):
+
+def validate(val_loader, model, criterion, device):
     model.eval()
     val_loss, val_acc = 0, 0
     for data, target in val_loader:
@@ -72,6 +75,7 @@ def validate(val_loader,model,criterion,device):
     print('\nValidation set: Average loss: {:.4f}, Accuracy: {:.1f}%\n'.format(
         val_loss, val_acc))
 
+
 def main():
     epochs = 1
     batch_size = 32
@@ -81,9 +85,7 @@ def main():
                                    train=True,
                                    download=True,
                                    transform=transforms.ToTensor())
-    val_dataset = datasets.MNIST('./data',
-                                 train=False,
-                                 transform=transforms.ToTensor())
+    val_dataset = datasets.MNIST('./data', train=False, transform=transforms.ToTensor())
     train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
                                                batch_size=batch_size,
                                                shuffle=True)
@@ -97,8 +99,9 @@ def main():
 
     for epoch in range(epochs):
         model.train()
-        train(train_loader,model,criterion,optimizer,epoch,device)
-        validate(val_loader,model,criterion,device)
+        train(train_loader, model, criterion, optimizer, epoch, device)
+        validate(val_loader, model, criterion, device)
+
 
 if __name__ == '__main__':
     main()

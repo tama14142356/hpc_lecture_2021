@@ -1,5 +1,6 @@
 import torch
 
+
 class ReLU(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input):
@@ -10,8 +11,9 @@ class ReLU(torch.autograd.Function):
     def backward(ctx, grad_output):
         input, = ctx.saved_tensors
         grad_input = grad_output.clone()
-        grad_input[input<0] = 0
+        grad_input[input < 0] = 0
         return grad_input
+
 
 epochs = 300
 batch_size = 32

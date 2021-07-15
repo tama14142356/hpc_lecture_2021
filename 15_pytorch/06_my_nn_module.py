@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class TwoLayerNet(nn.Module):
     def __init__(self, D_in, H, D_out):
         super(TwoLayerNet, self).__init__()
@@ -13,6 +14,7 @@ class TwoLayerNet(nn.Module):
         h_r = F.relu(h)
         y_p = self.fc2(h_r)
         return y_p
+
 
 epochs = 300
 batch_size = 32

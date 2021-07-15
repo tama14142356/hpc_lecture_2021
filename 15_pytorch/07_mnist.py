@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torchvision import datasets, transforms
 import time
 
+
 class TwoLayerNet(nn.Module):
     def __init__(self, D_in, H, D_out):
         super(TwoLayerNet, self).__init__()
@@ -17,6 +18,7 @@ class TwoLayerNet(nn.Module):
         y_p = self.fc2(h_r)
         return F.log_softmax(y_p, dim=1)
 
+
 epochs = 10
 batch_size = 32
 D_in = 784
@@ -25,13 +27,13 @@ D_out = 10
 learning_rate = 1.0e-02
 
 # read input data and labels
-train_dataset = datasets.MNIST('./data', 
-                               train=True, 
-                               download=True, 
+train_dataset = datasets.MNIST('./data',
+                               train=True,
+                               download=True,
                                transform=transforms.ToTensor())
 
-train_loader = torch.utils.data.DataLoader(dataset=train_dataset, 
-                                           batch_size=batch_size, 
+train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
+                                           batch_size=batch_size,
                                            shuffle=True)
 
 # define model
@@ -65,8 +67,8 @@ for epoch in range(epochs):
         optimizer.step()
 
         if batch_idx % 200 == 0:
-            print('Train Epoch: {} [{:>5}/{} ({:.0%})]\tLoss: {:.6f}\t Time:{:.4f}'.format(
-                epoch, batch_idx * len(x), len(train_loader.dataset),
-                batch_idx / len(train_loader), loss.data.item(),
-                time.perf_counter() - t))
+            print('Train Epoch: {} [{:>5}/{} ({:.0%})]\tLoss: {:.6f}\t Time:{:.4f}'.
+                  format(epoch, batch_idx * len(x), len(train_loader.dataset),
+                         batch_idx / len(train_loader), loss.data.item(),
+                         time.perf_counter() - t))
             t = time.perf_counter()

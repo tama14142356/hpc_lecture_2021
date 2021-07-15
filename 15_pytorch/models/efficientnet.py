@@ -24,13 +24,10 @@ def drop_connect(x, drop_ratio):
 
 class SE(nn.Module):
     '''Squeeze-and-Excitation block with Swish.'''
-
     def __init__(self, in_channels, se_channels):
         super(SE, self).__init__()
-        self.se1 = nn.Conv2d(in_channels, se_channels,
-                             kernel_size=1, bias=True)
-        self.se2 = nn.Conv2d(se_channels, in_channels,
-                             kernel_size=1, bias=True)
+        self.se1 = nn.Conv2d(in_channels, se_channels, kernel_size=1, bias=True)
+        self.se2 = nn.Conv2d(se_channels, in_channels, kernel_size=1, bias=True)
 
     def forward(self, x):
         out = F.adaptive_avg_pool2d(x, (1, 1))
@@ -42,7 +39,6 @@ class SE(nn.Module):
 
 class Block(nn.Module):
     '''expansion + depthwise + pointwise + squeeze-excitation'''
-
     def __init__(self,
                  in_channels,
                  out_channels,
@@ -108,20 +104,17 @@ class EfficientNet(nn.Module):
     def __init__(self, cfg, num_classes=10):
         super(EfficientNet, self).__init__()
         self.cfg = cfg
-        self.conv1 = nn.Conv2d(3,
-                               32,
-                               kernel_size=3,
-                               stride=1,
-                               padding=1,
-                               bias=False)
+        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(32)
         self.layers = self._make_layers(in_channels=32)
         self.linear = nn.Linear(cfg['out_channels'][-1], num_classes)
 
     def _make_layers(self, in_channels):
         layers = []
-        cfg = [self.cfg[k] for k in ['expansion', 'out_channels', 'num_blocks', 'kernel_size',
-                                     'stride']]
+        cfg = [
+            self.cfg[k] for k in
+            ['expansion', 'out_channels', 'num_blocks', 'kernel_size', 'stride']
+        ]
         b = 0
         blocks = sum(self.cfg['num_blocks'])
         for expansion, out_channels, num_blocks, kernel_size, stride in zip(*cfg):

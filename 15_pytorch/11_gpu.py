@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torchvision import datasets, transforms
 import time
 
+
 class CNN(nn.Module):
     def __init__(self):
         super(CNN, self).__init__()
@@ -29,7 +30,8 @@ class CNN(nn.Module):
         output = F.log_softmax(x, dim=1)
         return output
 
-def train(train_loader,model,criterion,optimizer,epoch,device):
+
+def train(train_loader, model, criterion, optimizer, epoch, device):
     model.train()
     t = time.perf_counter()
     for batch_idx, (data, target) in enumerate(train_loader):
@@ -41,13 +43,14 @@ def train(train_loader,model,criterion,optimizer,epoch,device):
         loss.backward()
         optimizer.step()
         if batch_idx % 200 == 0:
-            print('Train Epoch: {} [{:>5}/{} ({:.0%})]\tLoss: {:.6f}\t Time:{:.4f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                batch_idx / len(train_loader), loss.data.item(),
-                time.perf_counter() - t))
+            print('Train Epoch: {} [{:>5}/{} ({:.0%})]\tLoss: {:.6f}\t Time:{:.4f}'.
+                  format(epoch, batch_idx * len(data), len(train_loader.dataset),
+                         batch_idx / len(train_loader), loss.data.item(),
+                         time.perf_counter() - t))
             t = time.perf_counter()
 
-def validate(val_loader,model,criterion,device):
+
+def validate(val_loader, model, criterion, device):
     model.eval()
     val_loss, val_acc = 0, 0
     for data, target in val_loader:
@@ -64,6 +67,7 @@ def validate(val_loader,model,criterion,device):
     print('\nValidation set: Average loss: {:.4f}, Accuracy: {:.1f}%\n'.format(
         val_loss, val_acc))
 
+
 def main():
     epochs = 10
     batch_size = 32
@@ -73,9 +77,7 @@ def main():
                                    train=True,
                                    download=True,
                                    transform=transforms.ToTensor())
-    val_dataset = datasets.MNIST('./data',
-                                 train=False,
-                                 transform=transforms.ToTensor())
+    val_dataset = datasets.MNIST('./data', train=False, transform=transforms.ToTensor())
     train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
                                                batch_size=batch_size,
                                                shuffle=True)
@@ -89,8 +91,9 @@ def main():
 
     for epoch in range(epochs):
         model.train()
-        train(train_loader,model,criterion,optimizer,epoch,device)
-        validate(val_loader,model,criterion,device)
+        train(train_loader, model, criterion, optimizer, epoch, device)
+        validate(val_loader, model, criterion, device)
+
 
 if __name__ == '__main__':
     main()

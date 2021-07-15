@@ -13,10 +13,10 @@ y = torch.randn(batch_size, D_out)
 
 # define model
 model = torch.nn.Sequential(
-        torch.nn.Linear(D_in, H),
-        torch.nn.ReLU(),
-        torch.nn.Linear(H, D_out),
-        )
+    torch.nn.Linear(D_in, H),
+    torch.nn.ReLU(),
+    torch.nn.Linear(H, D_out),
+)
 
 # define loss function
 criterion = torch.nn.MSELoss(reduction='sum')

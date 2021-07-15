@@ -17,9 +17,9 @@ w2 = np.random.randn(H, D_out)
 
 for epoch in range(epochs):
     # forward pass
-    h = x.dot(w1) # h = x * w1
-    h_r = np.maximum(h, 0) # h_r = ReLU(h)
-    y_p = h_r.dot(w2) # y_p = h_r * w2
+    h = x.dot(w1)  # h = x * w1
+    h_r = np.maximum(h, 0)  # h_r = ReLU(h)
+    y_p = h_r.dot(w2)  # y_p = h_r * w2
 
     # compute mean squared error and print loss
     loss = np.square(y_p - y).sum()
