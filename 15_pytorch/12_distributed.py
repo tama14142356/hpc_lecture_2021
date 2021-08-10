@@ -13,15 +13,19 @@ print('Rank: {}, Size: {}, Host: {}'.format(dist.get_rank(), dist.get_world_size
 
 ngpus = torch.cuda.device_count()
 device = rank % ngpus
-x = torch.randn(1).to(device)
+# x = torch.randn(1).to(device)
+x = torch.randn(2).to(device)
 output = [torch.ones(1, ).to(device) for _ in range(world_size)]
 print('rank {}: {}'.format(rank, x))
 print('rank {}: {}'.format(rank, output))
 # dist.broadcast(x, src=0)
-dist.all_gather(output, x)
+# dist.all_gather(output, x)
+dist.all_reduce(x, op=dist.ReduceOp.SUM)
+y = torch.sum(x)
 # nccl not supported gather func
 # if rank == 0:
 #     dist.gather(x, gather_list=output, dst=0)
 print('rank {}: {}'.format(rank, x))
+print('rank {}: {}'.format(rank, y))
 print('rank {}: {}'.format(rank, output))
 dist.destroy_process_group()
