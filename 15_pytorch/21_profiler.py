@@ -41,6 +41,7 @@ def train(train_loader, model, criterion, optimizer, epoch, device):
             on_trace_ready=torch.profiler.tensorboard_trace_handler("./log"),
             record_shapes=True) as prof:
         for batch_idx, (data, target) in enumerate(train_loader):
+            print("batch idx: ", batch_idx)
             data = data.to(device)
             target = target.to(device)
             output = model(data)
