@@ -7,6 +7,7 @@ H = 100
 D_out = 10
 learning_rate = 1.0e-06
 
+np.random.seed(0)
 # create random input and output data
 x = np.random.randn(batch_size, D_in)
 y = np.random.randn(batch_size, D_out)

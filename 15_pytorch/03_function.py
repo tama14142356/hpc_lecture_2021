@@ -15,6 +15,7 @@ class ReLU(torch.autograd.Function):
         return grad_input
 
 
+torch.manual_seed(0)
 epochs = 300
 batch_size = 32
 D_in = 784

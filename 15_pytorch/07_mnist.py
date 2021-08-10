@@ -26,6 +26,7 @@ H = 100
 D_out = 10
 learning_rate = 1.0e-02
 
+torch.manual_seed(0)
 # read input data and labels
 train_dataset = datasets.MNIST('./data',
                                train=True,

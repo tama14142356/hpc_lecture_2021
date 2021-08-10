@@ -7,6 +7,7 @@ H = 100
 D_out = 10
 learning_rate = 1.0e-06
 
+torch.manual_seed(0)
 # create random input and output data
 x = torch.randn(batch_size, D_in)
 y = torch.randn(batch_size, D_out)
