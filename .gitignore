@@ -9,3 +9,4 @@ compile_commands.json
 output/
 out/
 data/
+wandb/
