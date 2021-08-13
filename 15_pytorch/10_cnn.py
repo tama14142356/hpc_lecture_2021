@@ -4,6 +4,30 @@ import torch.nn.functional as F
 from torchvision import datasets, transforms
 import time
 
+import numpy as np
+import random
+
+
+class Test(nn.Module):
+    def __init__(self, num=0):
+        super().__init__()
+        self.num = 0
+
+    def forward(self, x):
+        self.num += 1
+        t = torch.rand(1)
+        print(f"num: {self.num} {t}")
+
+
+def set_seed(seed):
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    torch.manual_seed(seed)
+    # torch.cuda.manual_seed_all(seed)
+    torch.cuda.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+
 
 class CNN(nn.Module):
     def __init__(self):
@@ -14,8 +38,10 @@ class CNN(nn.Module):
         self.dropout2 = nn.Dropout2d(0.5)
         self.fc1 = nn.Linear(9216, 128)
         self.fc2 = nn.Linear(128, 10)
+        self.test = Test(0)
 
     def forward(self, x):
+        self.test(x)
         x = self.conv1(x)
         x = F.relu(x)
         x = self.conv2(x)
@@ -65,15 +91,20 @@ def validate(val_loader, model, criterion):
 
 
 def main():
-    epochs = 10
-    batch_size = 32
+    set_seed(0)
+    epochs = 5
+    batch_size = 8
     learning_rate = 1.0e-02
 
     train_dataset = datasets.MNIST('./data',
                                    train=True,
                                    download=True,
                                    transform=transforms.ToTensor())
+    train_dataset.data = train_dataset.data[:batch_size]
+    train_dataset.targets = train_dataset.targets[:batch_size]
     val_dataset = datasets.MNIST('./data', train=False, transform=transforms.ToTensor())
+    val_dataset.data = val_dataset.data[:batch_size]
+    val_dataset.targets = val_dataset.targets[:batch_size]
     train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
                                                batch_size=batch_size,
                                                shuffle=True)
