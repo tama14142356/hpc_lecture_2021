@@ -10,6 +10,46 @@ import numpy as np
 import random
 
 
+class Test(nn.Module):
+    def __init__(self, num=0):
+        super().__init__()
+        self.num = 0
+        self.rank = 0
+        if dist.is_initialized():
+            self.rank = dist.get_rank()
+
+    @staticmethod
+    def get_test(name, num):
+        rank = 0
+        if dist.is_initialized():
+            rank = dist.get_rank()
+        print(f"rank{rank}: {name} {num}")
+        return f"rank{rank}: {name} {num}"
+
+    def forward(self, x):
+        self.num += 1
+        t = torch.rand(1)
+        print(f"rank{self.rank}: {self.num} {t}")
+        test_name = self.get_test("test", self.num)
+        print(f"{test_name}")
+        return x
+
+
+class ChildTest(Test):
+    def __init__(self, num=1, is_super=False, name="child"):
+        super().__init__(num)
+        self.num, self.name = num, name
+        self.is_super = is_super
+
+    def get_test(self, name, num):
+        if self.is_super:
+            return Test.get_test(name, num) + "\n"
+        super_name = ""
+        super_name += f"rank{self.rank}: {name} child {num}"
+        print(super_name)
+        return super_name
+
+
 def set_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
@@ -38,8 +78,11 @@ class CNN(nn.Module):
         self.dropout2 = nn.Dropout2d(0.5)
         self.fc1 = nn.Linear(9216, 128)
         self.fc2 = nn.Linear(128, 10)
+        # self.test = Test(0)
+        self.test = ChildTest(1)
 
     def forward(self, x):
+        self.test(x)
         x = self.conv1(x)
         x = F.relu(x)
         x = self.conv2(x)
@@ -73,6 +116,12 @@ def train(train_loader, model, criterion, optimizer, epoch, device, world_size):
                           batch_idx / len(train_loader), loss.data.item(),
                           time.perf_counter() - t))
             t = time.perf_counter()
+    # state_dict = model.state_dict(keep_vars=True)
+    # print0(f"state dict: type: {type(state_dict)}")
+    # for key in state_dict:
+    #     params = state_dict[key]
+    #     grad = params.grad
+    #     print0(f"state dict: grad type: {type(grad)}")
 
 
 def validate(val_loader, model, criterion, device):
@@ -94,7 +143,6 @@ def validate(val_loader, model, criterion, device):
 
 
 def main():
-    set_seed(0)
     master_addr = os.getenv("MASTER_ADDR", default="localhost")
     master_port = os.getenv('MASTER_PORT', default='8888')
     method = "tcp://{}:{}".format(master_addr, master_port)
@@ -106,6 +154,7 @@ def main():
                             world_size=world_size)
     ngpus = torch.cuda.device_count()
     device = torch.device('cuda', rank % ngpus)
+    set_seed(rank)
 
     epochs = 5
     batch_size = 8
