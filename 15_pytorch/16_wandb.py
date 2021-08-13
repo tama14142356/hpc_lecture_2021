@@ -8,6 +8,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 import time
 import os
 import wandb
+from collections import defaultdict
 
 
 def print0(message):
@@ -107,9 +108,15 @@ def train(train_loader, model, criterion, optimizer, epoch, device):
         loss.backward()
         optimizer.step()
         if batch_idx % 200 == 0:
-            batch_time.update(time.perf_counter() - t)
+            cur_time = time.perf_counter() - t
+            batch_time.update(cur_time)
             t = time.perf_counter()
             progress.display(batch_idx)
+            rank = 0
+            if dist.is_initialized():
+                rank = dist.get_rank()
+            if rank == 0:
+                wandb.log({"sec/batch": cur_time})
     return train_loss.avg, train_acc.avg
 
 
@@ -190,18 +197,29 @@ def main():
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
 
+    data_plot = defaultdict(list)
     for epoch in range(args.epochs):
         model.train()
         train_loss, train_acc = train(train_loader, model, criterion, optimizer, epoch,
                                       device)
         val_loss, val_acc = validate(val_loader, model, criterion, device)
         if rank == 0:
-            wandb.log({
-                'train_loss': train_loss,
-                'train_acc': train_acc,
-                'val_loss': val_loss,
-                'val_acc': val_acc
-            })
+            data_plot["train_loss"].append([epoch, train_loss])
+            data_plot["train_acc"].append([epoch, train_acc])
+            data_plot["val_loss"].append([epoch, val_loss])
+            data_plot["val_acc"].append([epoch, val_acc])
+            # wandb.log({
+            #     'train_loss': train_loss,
+            #     'train_acc': train_acc,
+            #     'val_loss': val_loss,
+            #     'val_acc': val_acc
+            # })
+    if rank == 0:
+        for key in data_plot:
+            tmp_data = data_plot[key]
+            table = wandb.Table(data=tmp_data, columns=["epoch", "value"])
+            wandb.log(
+                {f"{key}": wandb.plot.line(table, "epoch", "value", title=f"{key}")})
 
     dist.destroy_process_group()
 
