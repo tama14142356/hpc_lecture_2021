@@ -153,7 +153,7 @@ def main():
     device = torch.device('cuda', rank % ngpus)
 
     if rank == 0:
-        wandb.init()
+        wandb.init(entity="tomo", project="hpc_lecture_2021", name="sweep")
         wandb.config.update(args)
 
     transform_train = transforms.Compose([
