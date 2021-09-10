@@ -10,3 +10,4 @@ output/
 out/
 data/
 wandb/
+__pycache__/
