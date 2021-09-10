@@ -1,6 +1,6 @@
 #!/bin/bash
-#YBATCH -r am_1
-#SBATCH -N 1
+#YBATCH -r am_2
+#SBATCH -N 2
 #SBATCH -J cnntest
 
 MASTER_ADDR=$(/usr/sbin/ip a show | grep inet | grep 192.168.205 | head -1 | cut -d " " -f 6 | cut -d "/" -f 1)
@@ -14,6 +14,7 @@ module load openmpi
 
 mpirun \
     -np 4 \
+    -npernode 2 \
     -x MASTER_ADDR=$MASTER_ADDR \
     -x MASTER_PORT=$MASTER_PORT \
     python $1
