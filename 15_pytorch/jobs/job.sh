@@ -1,15 +1,22 @@
-#!/bin/bash 
+#!/bin/bash
 #$ -cwd
-#$ -l f_node=1
+#$ -l rt_G.small=1
 #$ -l h_rt=0:10:00
+#$ -N ddp
 #$ -j y
-#$ -o output/o.$JOB_ID
-
-export PYENV_ROOT="$HOME/.pyenv"
-export PATH="$PYENV_ROOT/bin:$PATH"
-eval "$(pyenv init -)"
-eval "$(pyenv virtualenv-init -)"
 
 source /etc/profile.d/modules.sh
-module load cuda openmpi nccl cudnn
-$1
+module load cuda/11.1/11.1.1
+# module load nccl/2.7/2.7.8-1
+# module load openmpi
+
+source ~/.bashrc
+
+# export PYENV_ROOT="$HOME/.pyenv"
+# export PATH="$PYENV_ROOT/bin:$PATH"
+# eval "$(pyenv init -)"
+# eval "$(pyenv virtualenv-init -)"
+
+# module load cuda openmpi nccl cudnn
+# $1
+python 10_cnn.py

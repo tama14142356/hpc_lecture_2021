@@ -9,45 +9,54 @@ import os
 import numpy as np
 import random
 
+# class Test(nn.Module):
+#     def __init__(self, num=0):
+#         super().__init__()
+#         self.num = 0
+#         self.rank = 0
+#         if dist.is_initialized():
+#             self.rank = dist.get_rank()
+#
+#     @staticmethod
+#     def get_test(name, num):
+#         rank = 0
+#         if dist.is_initialized():
+#             rank = dist.get_rank()
+#         print(f"rank{rank}: {name} {num}")
+#         return f"rank{rank}: {name} {num}"
+#
+#     def forward(self, x):
+#         self.num += 1
+#         t = torch.rand(1)
+#         print(f"rank{self.rank}: {self.num} {t}")
+#         test_name = self.get_test("test", self.num)
+#         print(f"{test_name}")
+#         return x
+#
+#
+# class ChildTest(Test):
+#     def __init__(self, num=1, is_super=False, name="child"):
+#         super().__init__(num)
+#         self.num, self.name = num, name
+#         self.is_super = is_super
+#
+#     def get_test(self, name, num):
+#         if self.is_super:
+#             return Test.get_test(name, num) + "\n"
+#         super_name = ""
+#         super_name += f"rank{self.rank}: {name} child {num}"
+#         print(super_name)
+#         return super_name
 
-class Test(nn.Module):
-    def __init__(self, num=0):
-        super().__init__()
-        self.num = 0
-        self.rank = 0
-        if dist.is_initialized():
-            self.rank = dist.get_rank()
 
-    @staticmethod
-    def get_test(name, num):
-        rank = 0
-        if dist.is_initialized():
-            rank = dist.get_rank()
-        print(f"rank{rank}: {name} {num}")
-        return f"rank{rank}: {name} {num}"
-
-    def forward(self, x):
-        self.num += 1
-        t = torch.rand(1)
-        print(f"rank{self.rank}: {self.num} {t}")
-        test_name = self.get_test("test", self.num)
-        print(f"{test_name}")
-        return x
-
-
-class ChildTest(Test):
-    def __init__(self, num=1, is_super=False, name="child"):
-        super().__init__(num)
-        self.num, self.name = num, name
-        self.is_super = is_super
-
-    def get_test(self, name, num):
-        if self.is_super:
-            return Test.get_test(name, num) + "\n"
-        super_name = ""
-        super_name += f"rank{self.rank}: {name} child {num}"
-        print(super_name)
-        return super_name
+def backward_hook(self, in_grad, out_grad):
+    self.in_grad = in_grad
+    self.out_grad = out_grad
+    print0(f"backward: {self}")
+    for data in in_grad:
+        print0(f"ingrad: {data.size()}")
+    for data in out_grad:
+        print0(f"outgrad: {data.size()}")
 
 
 def set_seed(seed):
@@ -79,10 +88,10 @@ class CNN(nn.Module):
         self.fc1 = nn.Linear(9216, 128)
         self.fc2 = nn.Linear(128, 10)
         # self.test = Test(0)
-        self.test = ChildTest(1)
+        # self.test = ChildTest(1)
 
     def forward(self, x):
-        self.test(x)
+        # self.test(x)
         x = self.conv1(x)
         x = F.relu(x)
         x = self.conv2(x)
@@ -154,7 +163,7 @@ def main():
                             world_size=world_size)
     ngpus = torch.cuda.device_count()
     device = torch.device('cuda', rank % ngpus)
-    set_seed(rank)
+    set_seed(0)
 
     epochs = 5
     batch_size = 8
@@ -179,6 +188,16 @@ def main():
                                              shuffle=False)
     model = CNN().to(device)
     model = DDP(model, device_ids=[rank % ngpus])
+    model_names = model.module._modules
+    # model_names = model._modules
+    print0(model_names)
+    for model_name in model_names:
+        module = model_names[model_name]
+        # wandb_key = f"{model_name}({module.__class__.__name__})"
+        # print(wandb_key)
+        print0(module)
+        module.register_full_backward_hook(backward_hook)
+    # model.module.register_full_backward_hook(backward_hook)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 
@@ -186,6 +205,24 @@ def main():
         model.train()
         train(train_loader, model, criterion, optimizer, epoch, device, world_size)
         validate(val_loader, model, criterion, device)
+        for model_name in model_names:
+            module = model_names[model_name]
+            # wandb_key = f"{model_name}({module.__class__.__name__})"
+            # print(wandb_key)
+            # module.register_full_backward_hook(backward_hook)
+            print0(module)
+            print0(model_name)
+            print0(len(module.out_grad))
+            print0(len(module.in_grad))
+            print0(f"epoch: {epoch} dl/dy: {module.out_grad[0].data.size()}")
+            print0(f"epoch: {epoch} dl/dx: {module.in_grad[0].data.size()}")
+            for data in module.in_grad:
+                print0(data.size())
+            for data in module.out_grad:
+                print0(data.size())
+            # print0(module.out_grad.size())
+            # print0(module.in_grad.size())
+        # print0(model.out_grad[0].data)
 
     dist.destroy_process_group()
 
