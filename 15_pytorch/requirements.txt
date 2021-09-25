@@ -1,5 +1,6 @@
 torch==1.6.0
 torchvision==0.7.0
+torch_tb_profiler
 wandb
 yapf
 flake8
