@@ -109,11 +109,13 @@ def main(args):
     batch_size = args.batch_size
     learning_rate = args.learning_rate
 
-    train_dataset = datasets.MNIST('./data',
+    train_dataset = datasets.MNIST(args.path,
                                    train=True,
                                    download=True,
                                    transform=transforms.ToTensor())
-    val_dataset = datasets.MNIST('./data', train=False, transform=transforms.ToTensor())
+    val_dataset = datasets.MNIST(args.path,
+                                 train=False,
+                                 transform=transforms.ToTensor())
 
     train_sampler = torch.utils.data.distributed.DistributedSampler(
         train_dataset, num_replicas=dist.get_world_size(), rank=dist.get_rank())
@@ -141,6 +143,10 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyTorch MNIST profile Example')
+    parser.add_argument('--path',
+                        type=str,
+                        default="./data",
+                        help='data path (default: ./data)')
     parser.add_argument('--logs',
                         type=str,
                         default="./logs",
