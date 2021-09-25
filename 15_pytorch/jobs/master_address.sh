@@ -38,7 +38,7 @@ module load openmpi
 source ~/.bashrc
 date_str="$(date '+%Y%m%d_%H%M%S')"
 log_file="$JOB_NAME.o$JOB_ID"
-log_root="runs/$data_str"
+log_root="runs/$date_str"
 
 mpirun \
     -np $gpus \
