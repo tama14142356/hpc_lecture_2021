@@ -48,3 +48,7 @@ git pull
 wandb login
 #### Sweep
 wandb sweep sweep.yaml
+
+### nvim + pyenv setting
+cd hpc_lecture_2021/15_pytorch
+bash coc-pyright_setting.sh
