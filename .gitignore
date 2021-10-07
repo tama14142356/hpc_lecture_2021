@@ -12,3 +12,5 @@ data/
 wandb/
 __pycache__/
 *.o*
+pyrightconfig.json
+*.tar
