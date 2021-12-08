@@ -7,6 +7,8 @@ import time
 import numpy as np
 import random
 
+from thop import profile
+
 
 class Test(nn.Module):
     def __init__(self, num=0):
@@ -15,8 +17,8 @@ class Test(nn.Module):
 
     def forward(self, x):
         self.num += 1
-        t = torch.rand(1)
-        print(f"num: {self.num} {t}")
+        # t = torch.rand(1)
+        # print(f"num: {self.num} {t}")
 
 
 def set_seed(seed):
@@ -113,6 +115,9 @@ def main():
                                              shuffle=False)
 
     model = CNN()
+    input_tmp = torch.randn(32, 1, 28, 28)
+    macs, params = profile(model, inputs=(input_tmp, ))
+    print("flops", macs, params)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 
