@@ -175,7 +175,10 @@ def main():
     model = VGG('VGG19').to(device)
     if rank == 0 and args.wandb_log:
         wandb.config.update({"model": model.__class__.__name__, "dataset": "CIFAR10"})
-    model = DDP(model, device_ids=[rank % ngpus])
+    if args.mpi_backend == "nccl":
+        model = DDP(model, device_ids=[rank % ngpus])
+    else:
+        model = DDP(model)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
 
