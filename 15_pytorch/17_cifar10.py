@@ -2,21 +2,15 @@ import argparse
 import torch
 import torch.distributed as dist
 import torch.nn as nn
-import torch.nn.functional as F
+# import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torch.nn.parallel import DistributedDataParallel as DDP
 import time
-import os
 import wandb
 from models import *
 
-
-def print0(message):
-    if dist.is_initialized():
-        if dist.get_rank() == 0:
-            print(message, flush=True)
-    else:
-        print(message, flush=True)
+from utils import dist_setup, dist_cleanup, myget_rank_size
+from utils import print0
 
 
 class AverageMeter(object):
@@ -127,21 +121,25 @@ def main():
                         default=1.0e-02,
                         metavar='LR',
                         help='learning rate (default: 1.0e-02)')
+    parser.add_argument('--mpi_backend',
+                        type=str,
+                        choices=["nccl", "gloo", "mpi"],
+                        default="nccl",
+                        help='mpi backend')
+    parser.add_argument('--wandb_log', action="store_true", help='wandb log')
     args = parser.parse_args()
 
-    master_addr = os.getenv("MASTER_ADDR", default="localhost")
-    master_port = os.getenv('MASTER_PORT', default='8888')
-    method = "tcp://{}:{}".format(master_addr, master_port)
-    rank = int(os.getenv('OMPI_COMM_WORLD_RANK', '0'))
-    world_size = int(os.getenv('OMPI_COMM_WORLD_SIZE', '1'))
-    dist.init_process_group("nccl",
-                            init_method=method,
-                            rank=rank,
-                            world_size=world_size)
-    ngpus = torch.cuda.device_count()
-    device = torch.device('cuda', rank % ngpus)
+    dist_setup(args.mpi_backend)
+    rank, world_size = myget_rank_size()
+    if args.mpi_backend == "nccl":
+        ngpus = torch.cuda.device_count()
+        device = torch.device("cuda", rank % ngpus)
+    else:
+        # ngpus = world_size
+        device_name = "cuda" if torch.cuda.is_available() else "cpu"
+        device = torch.device(device_name)
 
-    if rank == 0:
+    if rank == 0 and args.wandb_log:
         wandb.init()
         wandb.config.update(args)
 
@@ -175,7 +173,7 @@ def main():
     # model = EfficientNetB0()
     # model = RegNetX_200MF()
     model = VGG('VGG19').to(device)
-    if rank == 0:
+    if rank == 0 and args.wandb_log:
         wandb.config.update({"model": model.__class__.__name__, "dataset": "CIFAR10"})
     model = DDP(model, device_ids=[rank % ngpus])
     criterion = nn.CrossEntropyLoss()
@@ -187,14 +185,17 @@ def main():
                                       device)
         val_loss, val_acc = validate(val_loader, model, criterion, device)
         if rank == 0:
-            wandb.log({
-                'train_loss': train_loss,
-                'train_acc': train_acc,
-                'val_loss': val_loss,
-                'val_acc': val_acc
-            })
+            if args.wandb_log:
+                wandb.log({
+                    'train_loss': train_loss,
+                    'train_acc': train_acc,
+                    'val_loss': val_loss,
+                    'val_acc': val_acc
+                })
+            print0("train_loss", train_loss, "train_acc", train_acc, "val_loss",
+                   val_loss, "val_acc", val_acc)
 
-    dist.destroy_process_group()
+    dist_cleanup()
 
 
 if __name__ == '__main__':

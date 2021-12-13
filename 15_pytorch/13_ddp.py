@@ -5,9 +5,11 @@ import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torch.nn.parallel import DistributedDataParallel as DDP
 import time
-import os
 import numpy as np
 import random
+
+from utils import dist_setup, dist_cleanup, print0
+from utils import myget_rank_size
 
 
 def set_seed(seed):
@@ -18,15 +20,6 @@ def set_seed(seed):
     torch.cuda.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
-
-
-def print0(message):
-    if dist.is_initialized():
-        if dist.get_rank() == 0:
-            print(message, flush=True)
-            # print("init", flush=True)
-    else:
-        print(message, flush=True)
 
 
 class CNN(nn.Module):
@@ -66,7 +59,7 @@ def train(train_loader, model, criterion, optimizer, epoch, device, world_size):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        if batch_idx % 1 == 0:
+        if batch_idx % 200 == 0:
             print0('Train Epoch: {} [{:>5}/{} ({:.0%})]\tLoss: {:.6f}\t Time:{:.4f}'.
                    format(epoch,
                           batch_idx * len(data) * world_size, len(train_loader.dataset),
@@ -94,17 +87,18 @@ def validate(val_loader, model, criterion, device):
 
 
 def main():
-    master_addr = os.getenv("MASTER_ADDR", default="localhost")
-    master_port = os.getenv('MASTER_PORT', default='8888')
-    method = "tcp://{}:{}".format(master_addr, master_port)
-    rank = int(os.getenv('OMPI_COMM_WORLD_RANK', '0'))
-    world_size = int(os.getenv('OMPI_COMM_WORLD_SIZE', '1'))
-    dist.init_process_group("nccl",
-                            init_method=method,
-                            rank=rank,
-                            world_size=world_size)
-    ngpus = torch.cuda.device_count()
-    device = torch.device('cuda', rank % ngpus)
+    backend = "nccl"
+    # backend = "mpi"
+    dist_setup(backend)
+    rank, world_size = myget_rank_size()
+    if backend == "nccl":
+        ngpus = torch.cuda.device_count()
+        device = torch.device('cuda', rank % ngpus)
+    else:
+        # ngpus = world_size
+        device_name = "cuda" if torch.cuda.is_available() else "cpu"
+        device = torch.device(device_name)
+
     set_seed(0)
 
     epochs = 5
@@ -129,7 +123,10 @@ def main():
                                              batch_size=batch_size,
                                              shuffle=False)
     model = CNN().to(device)
-    model = DDP(model, device_ids=[rank % ngpus])
+    if backend == "nccl":
+        model = DDP(model, device_ids=[rank % ngpus])
+    else:
+        model = DDP(model)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 
