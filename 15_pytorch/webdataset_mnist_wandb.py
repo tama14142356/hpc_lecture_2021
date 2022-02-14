@@ -146,8 +146,7 @@ def validate(val_loader, model, criterion, device):
 
 def main():
     parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
-    parser.add_argument('--bs',
-                        '--batch_size',
+    parser.add_argument('--batch_size',
                         type=int,
                         default=32,
                         metavar='N',
