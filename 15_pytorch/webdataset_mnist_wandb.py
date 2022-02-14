@@ -162,9 +162,13 @@ def main():
                         default=1.0e-02,
                         metavar='LR',
                         help='learning rate (default: 1.0e-02)')
+    parser.add_argument("--mpi_backend",
+                        type=str,
+                        default="nccl",
+                        choices=["nccl", "mpi", "gloo"])
     args = parser.parse_args()
 
-    dist_setup(backend="mpi")
+    dist_setup(backend=args.mpi_backend)
     rank, world_size = myget_rank_size()
     # ngpus = torch.cuda.device_count()
     # device = torch.device('cuda', rank % ngpus)
