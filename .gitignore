@@ -17,3 +17,4 @@ pyrightconfig.json
 .venv/
 *.err
 torch_env/
+tmp/
