@@ -3,7 +3,8 @@ import torch
 import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import datasets, transforms
+# from torchvision import datasets
+from torchvision import transforms
 from torch.nn.parallel import DistributedDataParallel as DDP
 import time
 import os
@@ -170,8 +171,11 @@ def main():
 
     dist_setup(backend=args.mpi_backend)
     rank, world_size = myget_rank_size()
-    # ngpus = torch.cuda.device_count()
-    # device = torch.device('cuda', rank % ngpus)
+    if args.mpi_backend == "nccl":
+        ngpus = torch.cuda.device_count()
+        device = torch.device('cuda', rank % ngpus)
+    else:
+        device = torch.device("cpu")
     device = torch.device("cpu")
 
     if rank == 0:
@@ -187,24 +191,28 @@ def main():
         normalize,
     ])
 
-    tars = sorted(glob.glob(os.path.join("./data/webdatasets", "*.tar")))
-    train_dataset = wds.WebDataset(tars).decode("pil").to_tuple("jpg", "cls")
+    train_tars = sorted(glob.glob(os.path.join("./data/webdatasets", "train", "*.tar")))
+    train_dataset = wds.WebDataset(train_tars).decode("pil").to_tuple("jpg", "cls")
     train_dataset = train_dataset.map_tuple(preproc, lambda x: torch.tensor(x))
 
-    val_dataset = datasets.MNIST('./data', train=False, transform=transforms.ToTensor())
-    train_sampler = torch.utils.data.distributed.DistributedSampler(
-        train_dataset, num_replicas=dist.get_world_size(), rank=dist.get_rank())
-    train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
-                                               batch_size=args.bs,
-                                               sampler=train_sampler)
-    val_loader = torch.utils.data.DataLoader(dataset=val_dataset,
-                                             batch_size=args.bs,
-                                             shuffle=False)
+    val_tars = sorted(glob.glob(os.path.join("./data/webdatasets", "val", "*.tar")))
+    val_dataset = wds.WebDataset(val_tars).decode("pil").to_tuple("jpg", "cls")
+    val_dataset = val_dataset.map_tuple(preproc, lambda x: torch.tensor(x))
+
+    local_batch_size = args.batch_size // world_size
+    train_loader = wds.WebLoader(train_dataset,
+                                 num_workers=0,
+                                 batch_size=local_batch_size)
+    val_loader = wds.WebLoader(val_dataset, num_workers=0, batch_size=local_batch_size)
+
     model = CNN().to(device)
     if rank == 0:
         wandb.config.update({"model": model.__class__.__name__, "dataset": "MNIST"})
-    # model = DDP(model, device_ids=[rank % ngpus])
-    model = DDP(model)
+    if args.mpi_backend == "nccl":
+        model = DDP(model, device_ids=[rank % ngpus])
+    else:
+        model = DDP(model)
+
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
 
