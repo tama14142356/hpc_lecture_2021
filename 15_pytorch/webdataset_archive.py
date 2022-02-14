@@ -25,7 +25,7 @@ def create_pickle_webdataset(dataset, name, is_test=False):
 
 
 def create_img_webdataset(dataset, subset, name, is_test=False):
-    length = len(dataset)
+    # length = len(dataset)
     num_tars = 4
     tar_files = [f"{name}-{subset}-{i:03d}.tar" for i in range(num_tars)]
     sinks = [wds.TarWriter(tar_file) for tar_file in tar_files]
@@ -60,7 +60,9 @@ if __name__ == "__main__":
     is_test = False
     is_train = args.subset == "train"
     if args.datasetname == "mnist":
-        dataset = torchvision.datasets.MNIST(root=args.path, train=is_train, download=True)
+        dataset = torchvision.datasets.MNIST(root=args.path,
+                                             train=is_train,
+                                             download=True)
         is_test = True
     # elif args.datasetname == "bdd":
     #     dataset = BDD(args.path)

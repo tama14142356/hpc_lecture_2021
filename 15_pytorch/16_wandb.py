@@ -6,9 +6,9 @@ import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torch.nn.parallel import DistributedDataParallel as DDP
 import time
-import os
 import wandb
-from collections import defaultdict
+
+from utils import dist_setup, dist_cleanup, myget_rank_size
 
 
 def print0(message):
@@ -112,12 +112,12 @@ def train(train_loader, model, criterion, optimizer, epoch, device):
             batch_time.update(cur_time)
             t = time.perf_counter()
             progress.display(batch_idx)
-            rank = 0
-            if dist.is_initialized():
-                rank = dist.get_rank()
-            if rank == 0:
-                wandb.log({"sec/batch": cur_time})
-    return train_loss.avg, train_acc.avg
+            # rank = 0
+            # if dist.is_initialized():
+            #     rank = dist.get_rank()
+            # if rank == 0:
+            #     wandb.log({"sec/batch": cur_time})
+    return train_loss.avg, train_acc.avg, batch_time.avg
 
 
 def validate(val_loader, model, criterion, device):
@@ -159,22 +159,23 @@ def main():
                         default=1.0e-02,
                         metavar='LR',
                         help='learning rate (default: 1.0e-02)')
+    parser.add_argument("--mpi_backend",
+                        type=str,
+                        default="nccl",
+                        choices=["nccl", "mpi", "gloo"])
     args = parser.parse_args()
 
-    master_addr = os.getenv("MASTER_ADDR", default="localhost")
-    master_port = os.getenv('MASTER_PORT', default='8888')
-    method = "tcp://{}:{}".format(master_addr, master_port)
-    rank = int(os.getenv('OMPI_COMM_WORLD_RANK', '0'))
-    world_size = int(os.getenv('OMPI_COMM_WORLD_SIZE', '1'))
-    dist.init_process_group("nccl",
-                            init_method=method,
-                            rank=rank,
-                            world_size=world_size)
-    ngpus = torch.cuda.device_count()
-    device = torch.device('cuda', rank % ngpus)
+    dist_setup(backend=args.mpi_backend)
+    rank, world_size = myget_rank_size()
+    # is_cuda_avail = torch.cuda.is_available()
+    if args.mpi_backend == "nccl":
+        ngpus = torch.cuda.device_count()
+        device = torch.device('cuda', rank % ngpus)
+    else:
+        device = torch.device("cpu")
 
     if rank == 0:
-        wandb.init()
+        wandb.init(project="ssl_test_result", entity="tomo", name="wandb_mnist_tmp")
         wandb.config.update(args)
 
     train_dataset = datasets.MNIST('./data',
@@ -193,35 +194,40 @@ def main():
     model = CNN().to(device)
     if rank == 0:
         wandb.config.update({"model": model.__class__.__name__, "dataset": "MNIST"})
-    model = DDP(model, device_ids=[rank % ngpus])
+    if args.mpi_backend == "nccl":
+        model = DDP(model, device_ids=[rank % ngpus])
+    else:
+        model = DDP(model)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
 
-    data_plot = defaultdict(list)
+    # data_plot = defaultdict(list)
     for epoch in range(args.epochs):
         model.train()
-        train_loss, train_acc = train(train_loader, model, criterion, optimizer, epoch,
-                                      device)
+        train_loss, train_acc, batch_time = train(train_loader, model, criterion,
+                                                  optimizer, epoch, device)
         val_loss, val_acc = validate(val_loader, model, criterion, device)
         if rank == 0:
-            data_plot["train_loss"].append([epoch, train_loss])
-            data_plot["train_acc"].append([epoch, train_acc])
-            data_plot["val_loss"].append([epoch, val_loss])
-            data_plot["val_acc"].append([epoch, val_acc])
-            # wandb.log({
-            #     'train_loss': train_loss,
-            #     'train_acc': train_acc,
-            #     'val_loss': val_loss,
-            #     'val_acc': val_acc
-            # })
-    if rank == 0:
-        for key in data_plot:
-            tmp_data = data_plot[key]
-            table = wandb.Table(data=tmp_data, columns=["epoch", "value"])
-            wandb.log(
-                {f"{key}": wandb.plot.line(table, "epoch", "value", title=f"{key}")})
+            # data_plot["train_loss"].append([epoch, train_loss])
+            # data_plot["train_acc"].append([epoch, train_acc])
+            # data_plot["val_loss"].append([epoch, val_loss])
+            # data_plot["val_acc"].append([epoch, val_acc])
+            # data_plot["batch_time"].append([epoch, val_acc])
+            wandb.log({
+                'train_loss': train_loss,
+                'train_acc': train_acc,
+                'val_loss': val_loss,
+                'val_acc': val_acc,
+                'batch_time': batch_time
+            })
+    # if rank == 0:
+    #     for key in data_plot:
+    #         tmp_data = data_plot[key]
+    #         table = wandb.Table(data=tmp_data, columns=["epoch", "value"])
+    #         wandb.log(
+    #             {f"{key}": wandb.plot.line(table, "epoch", "value", title=f"{key}")})
 
-    dist.destroy_process_group()
+    dist_cleanup()
 
 
 if __name__ == '__main__':
