@@ -91,11 +91,11 @@ class ProgressMeter(object):
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
 
 
-def train(train_loader, model, criterion, optimizer, epoch, device):
+def train(train_loader, model, criterion, optimizer, epoch, device, length):
     batch_time = AverageMeter('Time', ':.4f')
     train_loss = AverageMeter('Loss', ':.6f')
     train_acc = AverageMeter('Accuracy', ':.6f')
-    progress = ProgressMeter(len(train_loader), [train_loss, train_acc, batch_time],
+    progress = ProgressMeter(length, [train_loss, train_acc, batch_time],
                              prefix="Epoch: [{}]".format(epoch))
     model.train()
     t = time.perf_counter()
@@ -124,10 +124,10 @@ def train(train_loader, model, criterion, optimizer, epoch, device):
     return train_loss.avg, train_acc.avg, batch_time.avg
 
 
-def validate(val_loader, model, criterion, device):
+def validate(val_loader, model, criterion, device, length):
     val_loss = AverageMeter('Loss', ':.6f')
     val_acc = AverageMeter('Accuracy', ':.1f')
-    progress = ProgressMeter(len(val_loader), [val_loss, val_acc],
+    progress = ProgressMeter(length, [val_loss, val_acc],
                              prefix='\nValidation: ',
                              postfix='\n')
     model.eval()
@@ -190,10 +190,14 @@ def main():
         normalize,
     ])
 
+    train_img_num = 60000
+    train_length = train_img_num // args.batch_size
     train_tars = sorted(glob.glob(os.path.join("./data/webdatasets", "train", "*.tar")))
     train_dataset = wds.WebDataset(train_tars).decode("pil").to_tuple("jpg", "cls")
     train_dataset = train_dataset.map_tuple(preproc, lambda x: torch.tensor(x))
 
+    val_img_num = 10000
+    val_length = val_img_num // args.batch_size
     val_tars = sorted(glob.glob(os.path.join("./data/webdatasets", "val", "*.tar")))
     val_dataset = wds.WebDataset(val_tars).decode("pil").to_tuple("jpg", "cls")
     val_dataset = val_dataset.map_tuple(preproc, lambda x: torch.tensor(x))
@@ -219,8 +223,9 @@ def main():
     for epoch in range(args.epochs):
         model.train()
         train_loss, train_acc, batch_time = train(train_loader, model, criterion,
-                                                  optimizer, epoch, device)
-        val_loss, val_acc = validate(val_loader, model, criterion, device)
+                                                  optimizer, epoch, device,
+                                                  train_length)
+        val_loss, val_acc = validate(val_loader, model, criterion, device, val_length)
         if rank == 0:
             # data_plot["train_loss"].append([epoch, train_loss])
             # data_plot["train_acc"].append([epoch, train_acc])
