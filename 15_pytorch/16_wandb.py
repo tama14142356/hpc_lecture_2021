@@ -7,8 +7,12 @@ from torchvision import datasets, transforms
 from torch.nn.parallel import DistributedDataParallel as DDP
 import time
 import wandb
+import os
+import glob
+import webdataset as wds
 
 from utils import dist_setup, dist_cleanup, myget_rank_size
+from utils import print_rank
 
 
 def print0(message):
@@ -20,6 +24,7 @@ def print0(message):
 
 
 class CNN(nn.Module):
+
     def __init__(self):
         super(CNN, self).__init__()
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
@@ -46,6 +51,7 @@ class CNN(nn.Module):
 
 
 class AverageMeter(object):
+
     def __init__(self, name, fmt=':f'):
         self.name = name
         self.fmt = fmt
@@ -69,6 +75,7 @@ class AverageMeter(object):
 
 
 class ProgressMeter(object):
+
     def __init__(self, num_batches, meters, prefix="", postfix=""):
         self.batch_fmtstr = self._get_batch_fmtstr(num_batches)
         self.meters = meters
@@ -87,18 +94,20 @@ class ProgressMeter(object):
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
 
 
-def train(train_loader, model, criterion, optimizer, epoch, device):
+def train(train_loader, model, criterion, optimizer, epoch, device, length):
     batch_time = AverageMeter('Time', ':.4f')
     train_loss = AverageMeter('Loss', ':.6f')
     train_acc = AverageMeter('Accuracy', ':.6f')
-    progress = ProgressMeter(len(train_loader), [train_loss, train_acc, batch_time],
+    progress = ProgressMeter(length, [train_loss, train_acc, batch_time],
                              prefix="Epoch: [{}]".format(epoch))
     model.train()
     t = time.perf_counter()
     for batch_idx, (data, target) in enumerate(train_loader):
         data = data.to(device)
         target = target.to(device)
+        print_rank(batch_idx, target.size(), data.size())
         output = model(data)
+        print_rank(batch_idx, output.size(), data.size())
         loss = criterion(output, target)
         train_loss.update(loss.item(), data.size(0))
         pred = output.data.max(1)[1]
@@ -120,10 +129,10 @@ def train(train_loader, model, criterion, optimizer, epoch, device):
     return train_loss.avg, train_acc.avg, batch_time.avg
 
 
-def validate(val_loader, model, criterion, device):
+def validate(val_loader, model, criterion, device, length):
     val_loss = AverageMeter('Loss', ':.6f')
     val_acc = AverageMeter('Accuracy', ':.1f')
-    progress = ProgressMeter(len(val_loader), [val_loss, val_acc],
+    progress = ProgressMeter(length, [val_loss, val_acc],
                              prefix='\nValidation: ',
                              postfix='\n')
     model.eval()
@@ -136,7 +145,7 @@ def validate(val_loader, model, criterion, device):
         pred = output.data.max(1)[1]
         acc = 100. * pred.eq(target.data).cpu().sum() / target.size(0)
         val_acc.update(acc, data.size(0))
-    progress.display(len(val_loader))
+    progress.display(length)
     return val_loss.avg, val_acc.avg
 
 
@@ -163,6 +172,7 @@ def main():
                         type=str,
                         default="nccl",
                         choices=["nccl", "mpi", "gloo"])
+    parser.add_argument("--use_wds", action="store_true")
     args = parser.parse_args()
 
     dist_setup(backend=args.mpi_backend)
@@ -178,19 +188,54 @@ def main():
         wandb.init(project="ssl_test_result", entity="tomo", name="wandb_mnist_tmp")
         wandb.config.update(args)
 
-    train_dataset = datasets.MNIST('./data',
-                                   train=True,
-                                   download=True,
-                                   transform=transforms.ToTensor())
-    val_dataset = datasets.MNIST('./data', train=False, transform=transforms.ToTensor())
-    train_sampler = torch.utils.data.distributed.DistributedSampler(
-        train_dataset, num_replicas=dist.get_world_size(), rank=dist.get_rank())
-    train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
-                                               batch_size=args.bs,
-                                               sampler=train_sampler)
-    val_loader = torch.utils.data.DataLoader(dataset=val_dataset,
-                                             batch_size=args.bs,
-                                             shuffle=False)
+    if args.use_wds:
+        # normalize = transforms.Normalize((0.1307, ), (0.3081, ))
+
+        preproc = transforms.Compose([
+            # transforms.RandomResizedCrop(224),
+            # transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            # normalize,
+        ])
+
+        train_img_num = 60000
+        train_length = train_img_num // args.bs
+        train_tars = sorted(
+            glob.glob(os.path.join("./data/webdatasets", "train", "*.tar")))
+        train_dataset = wds.WebDataset(train_tars).decode("pill").to_tuple("jpg", "cls")
+        train_dataset = train_dataset.map_tuple(preproc, lambda x: torch.tensor(x))
+
+        val_img_num = 10000
+        val_length = val_img_num // args.bs
+        val_tars = sorted(glob.glob(os.path.join("./data/webdatasets", "val", "*.tar")))
+        val_dataset = wds.WebDataset(val_tars).decode("pill").to_tuple("jpg", "cls")
+        val_dataset = val_dataset.map_tuple(preproc, lambda x: torch.tensor(x))
+
+        local_batch_size = args.bs // world_size
+        train_loader = wds.WebLoader(train_dataset,
+                                     num_workers=0,
+                                     batch_size=local_batch_size)
+        val_loader = wds.WebLoader(val_dataset,
+                                   num_workers=0,
+                                   batch_size=local_batch_size)
+    else:
+        train_dataset = datasets.MNIST('./data',
+                                       train=True,
+                                       download=True,
+                                       transform=transforms.ToTensor())
+        val_dataset = datasets.MNIST('./data',
+                                     train=False,
+                                     transform=transforms.ToTensor())
+        train_sampler = torch.utils.data.distributed.DistributedSampler(
+            train_dataset, num_replicas=dist.get_world_size(), rank=dist.get_rank())
+        train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
+                                                   batch_size=args.bs,
+                                                   sampler=train_sampler)
+        val_loader = torch.utils.data.DataLoader(dataset=val_dataset,
+                                                 batch_size=args.bs,
+                                                 shuffle=False)
+        train_length, val_length = len(train_loader), len(val_loader)
+
     model = CNN().to(device)
     if rank == 0:
         wandb.config.update({"model": model.__class__.__name__, "dataset": "MNIST"})
@@ -205,8 +250,9 @@ def main():
     for epoch in range(args.epochs):
         model.train()
         train_loss, train_acc, batch_time = train(train_loader, model, criterion,
-                                                  optimizer, epoch, device)
-        val_loss, val_acc = validate(val_loader, model, criterion, device)
+                                                  optimizer, epoch, device,
+                                                  train_length)
+        val_loss, val_acc = validate(val_loader, model, criterion, device, val_length)
         if rank == 0:
             # data_plot["train_loss"].append([epoch, train_loss])
             # data_plot["train_acc"].append([epoch, train_acc])
