@@ -13,6 +13,7 @@ import wandb
 import webdataset as wds
 
 from utils import dist_setup, dist_cleanup, myget_rank_size
+from utils import print_rank
 
 
 def print0(message):
@@ -102,7 +103,9 @@ def train(train_loader, model, criterion, optimizer, epoch, device, length):
     for batch_idx, (data, target) in enumerate(train_loader):
         data = data.to(device)
         target = target.to(device)
+        print_rank(batch_idx, target.size(), data.size())
         output = model(data)
+        print_rank(batch_idx, output.size(), data.size())
         loss = criterion(output, target)
         train_loss.update(loss.item(), data.size(0))
         pred = output.data.max(1)[1]
@@ -140,11 +143,12 @@ def validate(val_loader, model, criterion, device, length):
         pred = output.data.max(1)[1]
         acc = 100. * pred.eq(target.data).cpu().sum() / target.size(0)
         val_acc.update(acc, data.size(0))
-    progress.display(len(val_loader))
+    progress.display(length)
     return val_loss.avg, val_acc.avg
 
 
 def main():
+    print_rank("start main program")
     parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
     parser.add_argument('--batch_size',
                         type=int,
@@ -169,13 +173,13 @@ def main():
     args = parser.parse_args()
 
     dist_setup(backend=args.mpi_backend)
+    print_rank("dist setup complete")
     rank, world_size = myget_rank_size()
     if args.mpi_backend == "nccl":
         ngpus = torch.cuda.device_count()
         device = torch.device('cuda', rank % ngpus)
     else:
         device = torch.device("cpu")
-    device = torch.device("cpu")
 
     if rank == 0:
         wandb.init(project="ssl_test_result", entity="tomo", name="wandb_mnist_tmp")
@@ -207,6 +211,7 @@ def main():
                                  num_workers=0,
                                  batch_size=local_batch_size)
     val_loader = wds.WebLoader(val_dataset, num_workers=0, batch_size=local_batch_size)
+    print_rank("load data complete")
 
     model = CNN().to(device)
     if rank == 0:
@@ -220,6 +225,7 @@ def main():
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
 
     # data_plot = defaultdict(list)
+    print_rank("start train")
     for epoch in range(args.epochs):
         model.train()
         train_loss, train_acc, batch_time = train(train_loader, model, criterion,
@@ -245,9 +251,11 @@ def main():
     #         table = wandb.Table(data=tmp_data, columns=["epoch", "value"])
     #         wandb.log(
     #             {f"{key}": wandb.plot.line(table, "epoch", "value", title=f"{key}")})
+    print_rank("end train")
 
     dist_cleanup()
 
 
 if __name__ == '__main__':
+    print_rank("start program")
     main()
