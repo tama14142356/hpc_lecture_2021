@@ -1,10 +1,19 @@
 import os
 
 import torch.distributed as dist
-from mpi4py import MPI
+
+IS_MPI, ERR_MSG = False, ""
+try:
+    from mpi4py import MPI
+    IS_MPI = True
+except ImportError as ie:
+    print(ie)
+    ERR_MSG = ie
 
 
 def mpi_init():
+    if not IS_MPI:
+        raise ImportError(ERR_MSG)
     comm = MPI.COMM_WORLD
     mpirank = comm.Get_rank()
     mpisize = comm.Get_size()
