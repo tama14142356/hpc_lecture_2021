@@ -26,7 +26,6 @@ def print0(message):
 
 
 class CNN(nn.Module):
-
     def __init__(self):
         super(CNN, self).__init__()
         self.conv1 = nn.Conv2d(1, 32, 3, 1)
@@ -53,7 +52,6 @@ class CNN(nn.Module):
 
 
 class AverageMeter(object):
-
     def __init__(self, name, fmt=':f'):
         self.name = name
         self.fmt = fmt
@@ -77,7 +75,6 @@ class AverageMeter(object):
 
 
 class ProgressMeter(object):
-
     def __init__(self, num_batches, meters, prefix="", postfix=""):
         self.batch_fmtstr = self._get_batch_fmtstr(num_batches)
         self.meters = meters
@@ -212,7 +209,9 @@ def main():
         device = torch.device("cpu")
 
     if rank == 0:
-        wandb.init(project="ssl_test_result", entity="tomo", name="wandb_mnist_tmp")
+        wandb.init(project="ssl_test_result",
+                   entity="tomo",
+                   name=f"{args.mpi_backend}_wandb_mnist_tmp")
         wandb.config.update(args)
     print_rank("wandb setup complete")
 
@@ -297,7 +296,7 @@ def main():
             max_len = max(train_len, val_len)
 
             for i in range(max_len):
-                wandb_dict= {}
+                wandb_dict = {}
                 for k in train_keys:
                     if i < train_len:
                         wandb_dict[k] = train_wandb_log[k][i]
