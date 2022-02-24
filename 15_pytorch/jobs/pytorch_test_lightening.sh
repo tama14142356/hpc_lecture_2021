@@ -1,23 +1,24 @@
 #!/bin/bash
-#YBATCH -r am_4
-#SBATCH -N 2
-#SBATCH -J lightest
-#SBATCH --output output/pytorch_lightening_test-%j.out
+#$ -cwd
+#$ -l f_node=2
+#$ -l h_rt=0:30:00
+#$ -N light_dist_test
+#$ --output output/light_dist_test.out
+#$ -j y
 
 START_TIMESTAMP=$(date '+%s')
 
-job_id_base=$SLURM_JOBID
+job_id_base=$JOB_ID
 git_root=$(git rev-parse --show-toplevel | head -1)
 
 # ======== Modules ========
 
 source /etc/profile.d/modules.sh
 
-module load cuda/11.1
-module load nccl/cuda-11.1/2.7.8
-module load cudnn/cuda-11.1/8.0
-module load openmpi/3.1.6
-# module load openmpi
+#tsubame
+module load cuda/11.2.146
+module load nccl/2.8.4
+module load openmpi/3.1.4-opa10.10
 module list
 
 # ======== Pyenv ========
@@ -34,37 +35,31 @@ which python
 
 # ======== MPI ========
 
-# ylab
-nodes=$SLURM_NNODES
-gpus_pernode=2
-cpus_pernode=$SLURM_JOB_CPUS_PER_NODE
+nodes=$NHOSTS
+gpus_pernode=4
+cpus_pernode=28
 gpus=$(($nodes * $gpus_pernode))
 cpus=$(($nodes * $cpus_pernode))
 
-
-MASTER_ADDR=$(/usr/sbin/ip a show | grep inet | grep 192.168.205 | head -1 | cut -d " " -f 6 | cut -d "/" -f 1)
+MASTER_ADDR=`head -n 1 $SGE_JOB_SPOOL_DIR/pe_hostfile | cut -d " " -f 1`
 MASTER_PORT=$((10000 + ($job_id_base % 50000)))
 
 mpi_backend="nccl"
 # mpi_backend="mpi"
 # mpi_backend="gloo"
 
-# export NCCL_DEBUG=INFO # debug
-# export NCCL_IB_DISABLE=1 # tsubame
+# export NCCL_DEBUG=INFO
+# export NCCL_IB_DISABLE=1
 # export NCCL_IB_TIMEOUT=14
 
 # ======== Scripts ========
 
-    # -x NCCL_IB_GID_INDEX=3
 mpirun -np $gpus \
     -mca btl self,tcp \
     -npernode $gpus_pernode \
     -x MASTER_ADDR=$MASTER_ADDR \
     -x MASTER_PORT=$MASTER_PORT \
     python "$git_root/15_pytorch/mpi_test_lightening.py"
-    # python "$git_root/15_pytorch/mpi_test_lightening.py" \
-    # --mpi_backend "$mpi_backend"
-    # --is_mpi4py \
 
 
 END_TIMESTAMP=$(date '+%s')
