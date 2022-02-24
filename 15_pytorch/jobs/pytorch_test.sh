@@ -1,6 +1,6 @@
 #!/bin/bash
-#YBATCH -r am_2
-#SBATCH -N 1
+#YBATCH -r am_4
+#SBATCH -N 2
 #SBATCH -J disttortest
 #SBATCH --output output/torch_dist_test-%j.out
 
@@ -61,7 +61,7 @@ mpirun -np $gpus \
     -npernode $gpus_pernode \
     -x MASTER_ADDR=$MASTER_ADDR \
     -x MASTER_PORT=$MASTER_PORT \
-    python "$git_root/mpi_test.py" \
+    python "$git_root/15_pytorch/mpi_test.py" \
     --mpi_backend "$mpi_backend"
     # --is_mpi4py \
 
