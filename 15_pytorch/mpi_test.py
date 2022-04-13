@@ -115,6 +115,7 @@ if __name__ == "__main__":
 
     print_rank(backend, dist.is_available(), comm=comm)
     print_rank(f"setup {mpi_name} complete", comm=comm)
+    print_rank("gpus:", torch.cuda.device_count(), comm=comm)
 
     s_time = time.perf_counter()
     is_cuda = torch.cuda.is_available()
@@ -184,6 +185,11 @@ if __name__ == "__main__":
     # dist.gather(x, gather_list=output, dst=0)
     # print_rank(x, comm=comm)
 
+    print_rank("start memory summary", comm=comm)
+    print_rank(torch.cuda.memory_allocated(), comm=comm)
+    print_rank(torch.cuda.memory_reserved(), comm=comm)
+    print_rank(torch.cuda.memory_summary(), comm=comm)
+
     end_time = time.perf_counter() - s_time
-    print_rank("tmp exec time:", end_time, comm=comm)
+    print_rank("total exec time:", end_time, comm=comm)
     dist_cleanup()
