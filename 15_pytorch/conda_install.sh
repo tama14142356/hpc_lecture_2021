@@ -18,4 +18,5 @@ conda install pytorch torchvision torchaudio cudatoolkit=11.1 -c pytorch-lts -c 
 conda install flake8
 conda install yapf
 conda install jedi
+conda install -c pytorch-test torch_tb_profiler
 conda install -c conda-forge wandb
