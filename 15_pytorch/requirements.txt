@@ -6,3 +6,4 @@ wandb
 yapf
 flake8
 jedi
+# pytorch-lightning
