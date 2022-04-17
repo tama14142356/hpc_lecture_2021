@@ -10,8 +10,10 @@ world_size = int(os.getenv('OMPI_COMM_WORLD_SIZE', '1'))
 local_rank = int(os.getenv('OMPI_COMM_WORLD_LOCAL_RANK', '-1'))
 local_size = int(os.getenv('OMPI_COMM_WORLD_LOCAL_SIZE', '-2'))
 node_rank = int(os.getenv('OMPI_COMM_WORLD_NODE_RANK', '-3'))
-print("rank: {}, world_size: {}, local_rank: {}, local_size: {}, node_rank: {}".format(
-    rank, world_size, local_rank, local_size, node_rank))
+host_port_str = f"host: {master_addr}, port: {master_port}"
+print(
+    "rank: {}, world_size: {}, local_rank: {}, local_size: {}, node_rank: {}, {}"
+    .format(rank, world_size, local_rank, local_size, node_rank, host_port_str))
 dist.init_process_group("nccl", init_method=method, rank=rank, world_size=world_size)
 print('Rank: {}, Size: {}, Host: {}'.format(dist.get_rank(), dist.get_world_size(),
                                             master_addr))
