@@ -8,6 +8,15 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torchvision.models import resnet
 # import numpy as np
 
+IS_BYOL = False
+BYOL_ERR_MSG = ""
+try:
+    from byol_pytorch import BYOL
+    IS_BYOL = True
+except ImportError as ie:
+    print(ie)
+    BYOL_ERR_MSG = ie
+
 IS_MPI = False
 ERR_MSG = ""
 try:
@@ -168,28 +177,67 @@ if __name__ == "__main__":
     if not is_mpi4py:
         print_rank("start ddp", comm=comm)
         x = torch.rand(2, 3, 5, 6)
+        x = x.to(device)
+        # x = torch.rand(2, 3, 5, 6, requires_grad=True)
         print_rank("x:", x, comm=comm)
-        model = resnet.resnet18(pretrained=False)
+        model_resnet = resnet.resnet18(pretrained=False)
         print_rank("def resnet", comm=comm)
-        model = model.to(device)
-        print_rank("to device", comm=comm)
-        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-        print_rank("convert sync batch", comm=comm)
-        model = DDP(model, device_ids=[local_rank], output_device=local_rank)
-        print_rank("convert ddp model", comm=comm)
-        output = model(x)
+        model_resnet = model_resnet.to(device)
+        print_rank("resnet to device", comm=comm)
+        model_resnet = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model_resnet)
+        print_rank("resnet convert sync batch", comm=comm)
+        model_resnet = DDP(model_resnet,
+                           device_ids=[local_rank],
+                           output_device=local_rank)
+        print_rank("convert resnet ddp model", comm=comm)
+        output = model_resnet(x)
         print_rank("x:", x, comm=comm)
         print_rank("output:", output, comm=comm)
+        # output.backward()
+        # print_rank("resnet after backward:", torch.cuda.memory_allocated(), comm=comm)
+        # del model_resnet
+
+        if IS_BYOL:
+            print_rank("start byol", comm=comm)
+            model_resnet = resnet.resnet50(pretrained=False)
+            print_rank("def resnet50", comm=comm)
+            model_resnet = resnet.resnet18(pretrained=False)
+            print_rank("byol def resnet18", comm=comm)
+            model_resnet = model_resnet.to(device)
+            print_rank("byol to device", comm=comm)
+            model_resnet = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model_resnet)
+            print_rank("convert sync batch", comm=comm)
+            model_byol = BYOL(model_resnet,
+                              256,
+                              hidden_layer="avgpool",
+                              projection_size=256,
+                              projection_hidden_size=4096,
+                              moving_average_decay=0.99,
+                              use_momentum=True)
+            print_rank("def byol", comm=comm)
+            model_byol = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model_byol)
+            print_rank("byol convert sync batch", comm=comm)
+            model_byol = DDP(model_byol,
+                             device_ids=[local_rank],
+                             output_device=local_rank)
+            print_rank("convert byol ddp model byol", comm=comm)
+            output = model_byol(x)
+            with torch.no_grad():
+                print_rank("x:", x, comm=comm)
+                print_rank("output:", output, comm=comm)
+            output.backward()
+            print_rank("byol after backward:", torch.cuda.memory_allocated(), comm=comm)
 
     # print_rank("start gather", comm=comm)
     # dist.gather(x, gather_list=output, dst=0)
     # print_rank(x, comm=comm)
 
-    print_rank("start memory summary", comm=comm)
-    print_rank(torch.cuda.memory_allocated(), comm=comm)
-    print_rank(torch.cuda.memory_reserved(), comm=comm)
-    print_rank(torch.cuda.memory_summary(), comm=comm)
+    if rank == 0:
+        print_rank("start memory summary", comm=comm)
+        print_rank(torch.cuda.memory_allocated(), comm=comm)
+        print_rank(torch.cuda.memory_reserved(), comm=comm)
+        print_rank(torch.cuda.memory_summary(), comm=comm)
 
     end_time = time.perf_counter() - s_time
-    print_rank("total exec time:", end_time, comm=comm)
+    print_rank("total exec time:", end_time, "s", comm=comm)
     dist_cleanup()
