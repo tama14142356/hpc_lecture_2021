@@ -1,5 +1,6 @@
 import argparse
 import os
+import multiprocessing
 import time
 
 import torch
@@ -121,6 +122,9 @@ if __name__ == "__main__":
     else:
         dist_setup(backend)
         world_size, rank = dist.get_world_size(), dist.get_rank()
+
+    cpus = multiprocessing.cpu_count()
+    print_rank("cpus:", cpus, comm=comm)
 
     print_rank(backend, dist.is_available(), comm=comm)
     print_rank(f"setup {mpi_name} complete", comm=comm)
