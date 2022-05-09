@@ -42,7 +42,7 @@ def mpi_init():
 
 def dist_setup(backend="nccl"):
     master_addr = os.getenv("MASTER_ADDR", default="localhost")
-    master_port = os.getenv("MASTER_POST", default="8888")
+    master_port = os.getenv("MASTER_PORT", default="8888")
     method = "tcp://{}:{}".format(master_addr, master_port)
     rank = int(os.getenv("OMPI_COMM_WORLD_RANK", "0"))
     world_size = int(os.getenv("OMPI_COMM_WORLD_SIZE", "1"))
@@ -199,18 +199,22 @@ if __name__ == "__main__":
         print_rank("output:", output, comm=comm)
         # output.backward()
         # print_rank("resnet after backward:", torch.cuda.memory_allocated(), comm=comm)
-        # del model_resnet
 
         if IS_BYOL:
+            del model_resnet
             print_rank("start byol", comm=comm)
             model_resnet = resnet.resnet50(pretrained=False)
             print_rank("def resnet50", comm=comm)
-            model_resnet = resnet.resnet18(pretrained=False)
-            print_rank("byol def resnet18", comm=comm)
-            model_resnet = model_resnet.to(device)
-            print_rank("byol to device", comm=comm)
-            model_resnet = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model_resnet)
-            print_rank("convert sync batch", comm=comm)
+            # model_resnet = resnet.resnet18(pretrained=False)
+            # print_rank("byol def resnet18", comm=comm)
+            # model_resnet = model_resnet.to(device)
+            # print_rank("byol to device", comm=comm)
+            # model_resnet = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model_resnet)
+            # print_rank("convert sync batch", comm=comm)
+            # model_resnet = DDP(model_resnet,
+            #                    device_ids=[local_rank],
+            #                    output_device=local_rank)
+            # print_rank("convert resnet ddp model", comm=comm)
             model_byol = BYOL(model_resnet,
                               256,
                               hidden_layer="avgpool",
@@ -219,6 +223,8 @@ if __name__ == "__main__":
                               moving_average_decay=0.99,
                               use_momentum=True)
             print_rank("def byol", comm=comm)
+            model_byol = model_byol.to(device)
+            print_rank("byol to device", comm=comm)
             model_byol = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model_byol)
             print_rank("byol convert sync batch", comm=comm)
             model_byol = DDP(model_byol,
