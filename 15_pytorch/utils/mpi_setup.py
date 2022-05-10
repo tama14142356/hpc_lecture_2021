@@ -24,7 +24,7 @@ def mpi_init():
 # mpi setup
 def dist_setup(backend="nccl", is_mpi4py=False):
     master_addr = os.getenv("MASTER_ADDR", default="localhost")
-    master_port = os.getenv("MASTER_POST", default="8888")
+    master_port = os.getenv("MASTER_PORT", default="8888")
     method = "tcp://{}:{}".format(master_addr, master_port)
     rank = int(os.getenv("OMPI_COMM_WORLD_RANK", "0"))
     world_size = int(os.getenv("OMPI_COMM_WORLD_SIZE", "1"))
@@ -39,8 +39,9 @@ def dist_setup(backend="nccl", is_mpi4py=False):
                             rank=rank,
                             world_size=world_size)
 
-    print("Rank: {}, Size: {}, Host: {}".format(dist.get_rank(), dist.get_world_size(),
-                                                master_addr))
+    print("Rank: {}, Size: {}, Host: {} Port: {}".format(dist.get_rank(),
+                                                         dist.get_world_size(),
+                                                         master_addr, master_port))
 
 
 def dist_cleanup():
