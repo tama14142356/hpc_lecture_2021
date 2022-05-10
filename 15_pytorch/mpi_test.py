@@ -1,5 +1,4 @@
 import argparse
-import os
 import multiprocessing
 import time
 
@@ -8,6 +7,10 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torchvision.models import resnet
 # import numpy as np
+
+from utils.mpi_setup import dist_setup, dist_cleanup
+from utils.mpi_setup import mpi_init
+from utils.mpi_setup import print_rank
 
 IS_BYOL = False
 BYOL_ERR_MSG = ""
@@ -18,8 +21,7 @@ except ImportError as ie:
     print(ie)
     BYOL_ERR_MSG = ie
 
-IS_MPI = False
-ERR_MSG = ""
+IS_MPI, ERR_MSG = False, ""
 try:
     from mpi4py import MPI
     IS_MPI = True
@@ -28,73 +30,6 @@ except ImportError as ie:
     ERR_MSG = ie
 
 # from lib.utils import dist_setup, dist_cleanup, print_rank
-
-
-def mpi_init():
-    if not IS_MPI:
-        raise ImportError(ERR_MSG)
-    comm = MPI.COMM_WORLD
-    mpirank = comm.Get_rank()
-    mpisize = comm.Get_size()
-    print("Rank: {}, Size: {}".format(mpirank, mpisize))
-    return comm, mpirank, mpisize
-
-
-def dist_setup(backend="nccl"):
-    master_addr = os.getenv("MASTER_ADDR", default="localhost")
-    master_port = os.getenv("MASTER_PORT", default="8888")
-    method = "tcp://{}:{}".format(master_addr, master_port)
-    rank = int(os.getenv("OMPI_COMM_WORLD_RANK", "0"))
-    world_size = int(os.getenv("OMPI_COMM_WORLD_SIZE", "1"))
-    if backend == "mpi":
-        rank, world_size = -1, -1
-    elif backend == "gloo":
-        comm, rank, world_size = mpi_init()
-        # rank = int(os.getenv("PMIX_RANK", "0"))
-        # world_size = int(os.getenv("OMPI_UNIVERSE_SIZE", "1"))
-    dist.init_process_group(backend=backend,
-                            init_method=method,
-                            rank=rank,
-                            world_size=world_size)
-
-    print("Rank: {}, Size: {}, Host: {}".format(dist.get_rank(), dist.get_world_size(),
-                                                master_addr))
-
-
-def dist_cleanup():
-    if dist.is_initialized():
-        dist.destroy_process_group()
-
-
-def myget_rank_size(comm=None):
-    rank, world_size = 0, 1
-    if comm is not None:
-        rank = comm.Get_rank()
-        world_size = comm.Get_size()
-    if dist.is_initialized():
-        rank = dist.get_rank()
-        world_size = dist.get_world_size()
-    return rank, world_size
-
-
-def myget_rank(comm=None):
-    rank, _ = myget_rank_size(comm)
-    return rank
-
-
-# multi process print
-def print0(*args, comm=None):
-    rank = myget_rank(comm)
-    if rank == 0:
-        print(*args)
-
-
-def print_rank(*args, comm=None):
-    rank, world_size = myget_rank_size(comm)
-    digit = len(str(world_size))
-    str_rank = str(rank).zfill(digit)
-    print(f"rank: {str_rank}", *args)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -229,8 +164,12 @@ if __name__ == "__main__":
             print_rank("byol convert sync batch", comm=comm)
             model_byol = DDP(model_byol,
                              device_ids=[local_rank],
-                             output_device=local_rank)
+                             output_device=local_rank,
+                             find_unused_parameters=True)
             print_rank("convert byol ddp model byol", comm=comm)
+            model_byol.train()
+            x = torch.randn(2, 3, 256, 256, requires_grad=True, dtype=torch.float32)
+            x = x.to(device)
             output = model_byol(x)
             with torch.no_grad():
                 print_rank("x:", x, comm=comm)
